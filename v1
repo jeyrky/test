@@ -68,13 +68,7 @@ local speeds = {16, 16, 16, 16} -- Tốc độ mặc định
 
 for i, destination in ipairs(destinations) do
     Run(destination, speeds[i])
-    wait(1)  -- Chờ 1 giây trước khi thực hiện các hành động tiếp theo
-
-    if i == 1 then
-        Run(destinations[i + 1], speeds[i + 1])
-        wait(1)  -- Không có độ trễ khi chuyển từ vị trí thứ nhất đến thứ hai
-    elseif i == 4 then
-        wait(3)  -- Chờ 3 giây trước khi thực hiện hành động tiếp theo
+    if i == 4 then
         RandomAction()
         wait(1)
         UnequipTools()
