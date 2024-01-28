@@ -1,26 +1,33 @@
 local plr = game.Players.LocalPlayer
 local rs = game:GetService("ReplicatedStorage")
-local pathfindingService = game:GetService("PathfindingService")
+local ts = game:GetService("TweenService")
 
 local function SetTeam(teamName)
     rs.Remotes.CommF_:InvokeServer("SetTeam", teamName)
 end
 
-local function MoveTo(destination)
+local function Run(destination, speed)
     local humanoid = plr.Character:WaitForChild("Humanoid")
     local rootPart = humanoid.Parent:WaitForChild("HumanoidRootPart")
 
-    local path = pathfindingService:CreatePath({
-        AgentRadius = 2,
-        AgentHeight = 5,
-        AgentCanJump = true,
-        AgentJumpHeight = 10,
-        AgentMaxSlope = 45,
-        })
-    path:ComputeAsync(rootPart.Position, destination.Position)
+    local startPos = rootPart.Position
+    local endPos = destination.Position
 
-    path:MoveTo(rootPart.Position)
-    path:MoveTo(destination.Position)
+    local distance = (endPos - startPos).Magnitude
+    local duration = distance / speed
+
+    humanoid.WalkSpeed = 3  -- Chạy bộ với tốc độ 16 studs/s
+
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
+    local tweenGoal = {}
+    tweenGoal.Position = endPos
+
+    local tween = ts:Create(rootPart, tweenInfo, tweenGoal)
+    tween:Play()
+
+    wait(duration)
+
+    humanoid.WalkSpeed = 1  -- Đặt lại tốc độ bình thường sau khi di chuyển xong
 end
 
 local function RandomAction()
@@ -51,17 +58,19 @@ SetTeam("Pirates")
 wait(1)
 
 local destinations = {
-    Vector3.new(-432.318024, 74.7125626, 336.251801),
-    Vector3.new(-428.913605, 74.649498, 383.065613),
-    Vector3.new(-362.51416, 74.6511688, 386.262421),
-    --- Vector3.new(50, 75, 100),   -- Vị trí thứ tư đã được thay đổi
+    CFrame.new(-439.756195, 74.7229309, 334.207611, -0.997412086, -0.00302691618, -0.0718342587, -4.37081326e-07, 0.999113679, -0.0420938432, 0.0718979985, -0.0419848897, -0.99652797),
+    CFrame.new(-430.462463, 74.6348419, 383.055756, -0.998814881, 0.00247582933, 0.0486081503, -1.15964212e-07, 0.998705268, -0.0508704484, -0.0486711673, -0.0508101583, -0.997521579),
+    CFrame.new(-426.655273, 74.6416321, 387.312103, -0.505749345, -0.0332514271, -0.862039387, -3.25380825e-08, 0.999256849, -0.0385442823, 0.862680495, -0.0194936953, -0.505373538),
+    CFrame.new(-362.170715, 74.637352, 388.4216, -0.0902634189, -0.0389530361, -0.995155871, 5.64614311e-09, 0.999234796, -0.0391126946, 0.995917976, -0.00353043084, -0.0901943594),
 }
 
+local speeds = {2, 1, 3,3}
+
 for i, destination in ipairs(destinations) do
-    MoveTo(CFrame.new(destination))
+    Run(destination, speeds[i])
     wait(1)  -- Chờ 1 giây trước khi thực hiện các hành động tiếp theo
 
-    if i == 3 then
+    if i == 4 then
         RandomAction()
         wait(1)
         UnequipTools()
