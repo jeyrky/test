@@ -6,7 +6,7 @@ local function SetTeam(teamName)
     rs.Remotes.CommF_:InvokeServer("SetTeam", teamName)
 end
 
-local function Run(destination, speed)
+local function MoveNormally(destination, speed)
     local humanoid = plr.Character:WaitForChild("Humanoid")
     local rootPart = humanoid.Parent:WaitForChild("HumanoidRootPart")
 
@@ -16,8 +16,6 @@ local function Run(destination, speed)
     local distance = (endPos - startPos).Magnitude
     local duration = distance / speed
 
-    humanoid.WalkSpeed = 3  -- Chạy bộ với tốc độ 16 studs/s
-
     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
     local tweenGoal = {}
     tweenGoal.Position = endPos
@@ -26,8 +24,6 @@ local function Run(destination, speed)
     tween:Play()
 
     wait(duration)
-
-    humanoid.WalkSpeed = 3  -- Đặt lại tốc độ bình thường sau khi di chuyển xong
 end
 
 local function RandomAction()
@@ -67,7 +63,7 @@ local destinations = {
 local speeds = {2, 5, 3}
 
 for i, destination in ipairs(destinations) do
-    Run(destination, speeds[i])
+    MoveNormally(destination, speeds[i])
     wait(1)  -- Chờ 1 giây trước khi thực hiện các hành động tiếp theo
 
     if i == 3 then
