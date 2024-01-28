@@ -1,0 +1,77 @@
+local plr = game.Players.LocalPlayer
+local rs = game:GetService("ReplicatedStorage")
+local ts = game:GetService("TweenService")
+
+local function SetTeam(teamName)
+    rs.Remotes.CommF_:InvokeServer("SetTeam", teamName)
+end
+
+local function WalkSlowly(destination, speed)
+    local humanoid = plr.Character:WaitForChild("Humanoid")
+    local rootPart = humanoid.Parent:WaitForChild("HumanoidRootPart")
+
+    local startPos = rootPart.Position
+    local endPos = destination.Position
+
+    local distance = (endPos - startPos).Magnitude
+    local duration = distance / speed
+
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
+    local tweenGoal = {}
+    tweenGoal.Position = endPos
+
+    local tween = ts:Create(rootPart, tweenInfo, tweenGoal)
+    tween:Play()
+
+    wait(duration)
+end
+
+local function RandomAction()
+    rs.Remotes.CommF_:InvokeServer("Cousin", "Buy")
+end
+
+local function DropMultipleItemsFromBackpack(quantity)
+    for _, tool in ipairs(plr.Backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            tool.Parent = plr.Character
+            local toolInCharacter = plr.Character:FindFirstChild(tool.Name)
+            if toolInCharacter then
+                toolInCharacter.Parent = game.Workspace
+            end
+        end
+    end
+end
+
+local function UnequipTools()
+    for _, tool in ipairs(plr.Character:GetChildren()) do
+        if tool:IsA("Tool") then
+            tool.Parent = plr.Backpack
+        end
+    end
+end
+
+SetTeam("Pirates")
+wait(1)
+
+local destinations = {
+    CFrame.new(-432.318024, 74.7125626, 336.251801, -0.759288013, 0.0250567682, 0.650272071, 2.00700015e-07, 0.999258518, -0.0385039523, -0.650754631, -0.0292354599, -0.758724988),
+    CFrame.new(-428.913605, 74.649498, 383.065613, -0.723224521, -0.0297473464, -0.689971983, 9.35979187e-08, 0.999071896, -0.0430739261, 0.690612972, -0.0311521702, -0.722553372),
+    CFrame.new(-362.51416, 74.6511688, 386.262421, -0.129422843, -0.0389617272, -0.990823746, -1.87428668e-08, 0.999227762, -0.0392922014, 0.991589546, -0.00508531649, -0.129322901),
+    --- CFrame.new(50, 75, 100),   -- Vị trí thứ tư đã được thay đổi
+}
+
+local speeds = {2, 5, 3}
+
+for i, destination in ipairs(destinations) do
+    WalkSlowly(destination, speeds[i])
+    wait(1)  -- Chờ 1 giây trước khi thực hiện các hành động tiếp theo
+
+    if i == 3 then
+        RandomAction()
+        wait(1)
+        UnequipTools()
+        wait(1)
+        DropMultipleItemsFromBackpack(200)
+        wait(2)
+    end
+end
