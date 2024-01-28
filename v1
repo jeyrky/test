@@ -16,7 +16,7 @@ local function Run(destination, speed)
     local distance = (endPos - startPos).Magnitude
     local duration = distance / speed
 
-    humanoid.WalkSpeed = 3  -- Chạy bộ với tốc độ 16 studs/s
+    humanoid.WalkSpeed = speed
 
     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
     local tweenGoal = {}
@@ -27,7 +27,7 @@ local function Run(destination, speed)
 
     wait(duration)
 
-    humanoid.WalkSpeed = 1  -- Đặt lại tốc độ bình thường sau khi di chuyển xong
+    humanoid.WalkSpeed = 16 -- Đặt lại tốc độ mặc định (không cần chậm) sau khi di chuyển xong
 end
 
 local function RandomAction()
@@ -64,7 +64,7 @@ local destinations = {
     CFrame.new(-362.170715, 74.637352, 388.4216, -0.0902634189, -0.0389530361, -0.995155871, 5.64614311e-09, 0.999234796, -0.0391126946, 0.995917976, -0.00353043084, -0.0901943594),
 }
 
-local speeds = {2, 1, 3,3}
+local speeds = {16, 16, 16, 16} -- Tốc độ mặc định
 
 for i, destination in ipairs(destinations) do
     Run(destination, speeds[i])
