@@ -27,7 +27,7 @@ local function Run(destination, speed)
 
     wait(duration)
 
-    humanoid.WalkSpeed = 16 -- Đặt lại tốc độ mặc định (không cần chậm) sau khi di chuyển xong
+    humanoid.WalkSpeed = 16 -- Đặt lại tốc độ mặc định (không cần chậm)
 end
 
 local function RandomAction()
@@ -70,7 +70,11 @@ for i, destination in ipairs(destinations) do
     Run(destination, speeds[i])
     wait(1)  -- Chờ 1 giây trước khi thực hiện các hành động tiếp theo
 
-    if i == 4 then
+    if i == 1 then
+        Run(destinations[i + 1], speeds[i + 1])
+        wait(1)  -- Không có độ trễ khi chuyển từ vị trí thứ nhất đến thứ hai
+    elseif i == 4 then
+        wait(3)  -- Chờ 3 giây trước khi thực hiện hành động tiếp theo
         RandomAction()
         wait(1)
         UnequipTools()
