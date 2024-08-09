@@ -1,44 +1,36 @@
-local plr = game.Players.LocalPlayer
-local rs = game:GetService("ReplicatedStorage")
-local ts = game:GetService("TweenService")
+local player = game.Players.LocalPlayer
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local tweenService = game:GetService("TweenService")
 
 local function SetTeam(teamName)
-    rs.Remotes.CommF_:InvokeServer("SetTeam", teamName)
+    replicatedStorage.Remotes.CommF_:InvokeServer("SetTeam", teamName)
 end
 
-local function Run(destination, speed)
-    local humanoid = plr.Character:WaitForChild("Humanoid")
-    local rootPart = humanoid.Parent:WaitForChild("HumanoidRootPart")
-
-    local startPos = rootPart.Position
-    local endPos = destination.Position
-
-    local distance = (endPos - startPos).Magnitude
-    local duration = distance / speed
-
-    humanoid.WalkSpeed = speed
-
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
-    local tweenGoal = {}
-    tweenGoal.Position = endPos
-
-    local tween = ts:Create(rootPart, tweenInfo, tweenGoal)
-    tween:Play()
-
-    wait(duration)
-
-    humanoid.WalkSpeed = 16 -- Đặt lại tốc độ mặc định (không cần chậm)
+local function movePlayer(destination, duration)
+    local humanoidRootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if (humanoidRootPart) then
+        local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
+        local tweenGoal = { CFrame = destination }
+        local tween = tweenService:Create(humanoidRootPart, tweenInfo, tweenGoal)
+        tween:Play()
+        tween.Completed:Wait()
+    else
+        warn("HumanoidRootPart not found. Character may not be loaded.")
+    end
 end
+
+local startPosition = CFrame.new(-1613.46729, 38.532074, 146.637939, -0.858484089, -0.0241556726, -0.512270987, 4.54019755e-07, 0.998890102, -0.0471024923, 0.512840152, -0.0404369533, -0.85753125)
+local endPosition = CFrame.new(-1406.82495, 66.5333252, 2.68874645, -0.870761752, -0.019041121, -0.491336256, 6.69388101e-09, 0.999249935, -0.0387246832, 0.491705179, -0.0337199755, -0.870108545)
 
 local function RandomAction()
-    rs.Remotes.CommF_:InvokeServer("Cousin", "Buy")
+    replicatedStorage.Remotes.CommF_:InvokeServer("Cousin", "Buy")
 end
 
 local function DropMultipleItemsFromBackpack(quantity)
-    for _, tool in ipairs(plr.Backpack:GetChildren()) do
+    for _, tool in ipairs(player.Backpack:GetChildren()) do
         if tool:IsA("Tool") then
-            tool.Parent = plr.Character
-            local toolInCharacter = plr.Character:FindFirstChild(tool.Name)
+            tool.Parent = player.Character
+            local toolInCharacter = player.Character:FindFirstChild(tool.Name)
             if toolInCharacter then
                 toolInCharacter.Parent = game.Workspace
             end
@@ -47,33 +39,35 @@ local function DropMultipleItemsFromBackpack(quantity)
 end
 
 local function UnequipTools()
-    for _, tool in ipairs(plr.Character:GetChildren()) do
+    for _, tool in ipairs(player.Character:GetChildren()) do
         if tool:IsA("Tool") then
-            tool.Parent = plr.Backpack
+            tool.Parent = player.Backpack
         end
     end
 end
 
 SetTeam("Pirates")
+game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("TravelMain")
 wait(1)
+movePlayer(startPosition, 11)
+game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer("SetSpawnPoint")
 
-local destinations = {
-    CFrame.new(-439.756195, 74.7229309, 334.207611, -0.997412086, -0.00302691618, -0.0718342587, -4.37081326e-07, 0.999113679, -0.0420938432, 0.0718979985, -0.0419848897, -0.99652797),
-    CFrame.new(-430.462463, 74.6348419, 383.055756, -0.998814881, 0.00247582933, 0.0486081503, -1.15964212e-07, 0.998705268, -0.0508704484, -0.0486711673, -0.0508101583, -0.997521579),
-    CFrame.new(-426.655273, 74.6416321, 387.312103, -0.505749345, -0.0332514271, -0.862039387, -3.25380825e-08, 0.999256849, -0.0385442823, 0.862680495, -0.0194936953, -0.505373538),
-    CFrame.new(-362.170715, 74.637352, 388.4216, -0.0902634189, -0.0389530361, -0.995155871, 5.64614311e-09, 0.999234796, -0.0391126946, 0.995917976, -0.00353043084, -0.0901943594),
-}
+while true do
+    wait(0)
+    local success, errorMessage = pcall(function()
+        movePlayer(endPosition, 0)
+    end)
+    wait(0)
+    RandomAction()
+    wait(0)
+    UnequipTools()
+    wait(1)
+    DropMultipleItemsFromBackpack(200)
+    wait(0)
 
-local speeds = {16, 16, 16, 16} -- Tốc độ mặc định
-
-for i, destination in ipairs(destinations) do
-    Run(destination, speeds[i])
-    if i == 4 then
-        RandomAction()
-        wait(1)
-        UnequipTools()
-        wait(1)
-        DropMultipleItemsFromBackpack(200)
-        wait(2)
+    if not success then
+        warn("Error during movePlayer:", errorMessage)
     end
+
+    wait(1)
 end
