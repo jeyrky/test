@@ -16,9 +16,10 @@ local endPos = Vector3.new(-408.79, -6.50, 255.76)
 
 -- Các loại pet cần săn (chữ thường)
 local petTypes = {
-	"Secret",
-	"Mythic",
-	"Legendary"
+	"secret",
+	"mythic",
+	"mythical",
+	"legendary"
 }
 
 -- Tạo giao diện
@@ -43,46 +44,53 @@ local startBtn = createButton("▶️ Bắt đầu", 100)
 local setStartBtn = createButton("📍 Lưu tọa độ đầu", 150)
 local setEndBtn = createButton("📍 Lưu tọa độ cuối", 200)
 
--- Giữ phím E trên pet để mua
+-- Giữ phím E trên pet để mua (đã sửa thành tự chạy tới pet rồi mới mua)
 local function holdEOnPet(pet)
 	local root = pet.root
 	local model = pet.model
 	if not root or not model:IsDescendantOf(workspace) then return end
 
-	-- Chỉ bỏ qua nếu Owner tồn tại và không phải mình
 	local owner = model:FindFirstChild("Owner")
 	if owner and owner:IsA("ObjectValue") and owner.Value and owner.Value ~= lp then
 		return
 	end
 
-	-- Không bỏ qua chỉ vì có NameGui nữa
 	local cash = lp:FindFirstChild("leaderstats") and lp.leaderstats:FindFirstChild("Cash")
 	if not cash then return end
 
+	-- Chạy đến PET trước khi mua
+	humanoid:MoveTo(Vector3.new(root.Position.X, hrp.Position.Y, root.Position.Z))
+
+	local reached = false
+	local timeWaited = 0
+	repeat
+		task.wait(0.1)
+		timeWaited += 0.1
+		if (hrp.Position - root.Position).Magnitude <= 2 then
+			reached = true
+		end
+	until reached or timeWaited >= 5 or not autoRunning
+
+	if not reached then
+		print("❌ Không tiếp cận được PET:", model.Name)
+		return
+	end
+
 	local cashBefore = cash.Value
 	keypress(0x45)
-	local start = tick()
-	local followConn = RunService.RenderStepped:Connect(function()
-		if (hrp.Position - root.Position).Magnitude > followDistance then
-			humanoid:MoveTo(Vector3.new(root.Position.X, hrp.Position.Y, root.Position.Z))
-		else
-			humanoid:MoveTo(hrp.Position)
-		end
-	end)
 
-	while tick() - start < holdTime do
-		if not model:IsDescendantOf(workspace) then break end
+	local holdStart = tick()
+	while tick() - holdStart < holdTime and model:IsDescendantOf(workspace) do
 		task.wait(0.1)
 	end
 
 	keyrelease(0x45)
-	if followConn then followConn:Disconnect() end
 
 	local cashAfter = cash.Value
 	if cashAfter < cashBefore then
-		print("✅ MUA PET thành công:", pet.model.Name)
+		print("✅ MUA PET thành công:", model.Name)
 	else
-		print("❌ Không mua được:", pet.model.Name)
+		print("❌ Không mua được:", model.Name)
 	end
 end
 
