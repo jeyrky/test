@@ -19,7 +19,7 @@ local petTypes = {
 	"secret",
 	"mythic",
 	"mythical",
-	"Legendary"
+	"legendary"
 }
 
 -- Tạo giao diện
