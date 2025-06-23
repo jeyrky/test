@@ -10,18 +10,18 @@ local followDistance = 1.2
 local checkInterval = 0.2
 local autoRunning = false
 
--- Tọa độ vùng thảm đỏ mặc định
+-- Mặc định vùng thảm đỏ
 local startPos = Vector3.new(-410.59, -6.50, -134.74)
 local endPos = Vector3.new(-408.79, -6.50, 255.76)
 
--- Các loại pet cần săn
+-- Các loại pet muốn săn
 local petTypes = {
 	"Secret",
 	"Mythical",
 	"Legendary"
 }
 
--- Tạo UI
+-- UI setup
 local screenGui = Instance.new("ScreenGui", game.CoreGui)
 screenGui.Name = "AutoPET_GUI"
 
@@ -43,7 +43,7 @@ local startBtn = createButton("▶️ Bắt đầu", 100)
 local setStartBtn = createButton("📍 Lưu tọa độ đầu", 150)
 local setEndBtn = createButton("📍 Lưu tọa độ cuối", 200)
 
--- Giữ phím E khi ở gần pet
+-- Giữ phím E mua pet
 local function holdEOnPet(pet)
 	local root = pet.root
 	local model = pet.model
@@ -80,14 +80,14 @@ local function holdEOnPet(pet)
 	end
 end
 
--- Kiểm tra pet có trong vùng không
+-- Kiểm tra PET có trong vùng không
 local function isInZone(pos)
 	local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
 	local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
 	return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
 end
 
--- Pet có chứa loại mong muốn không?
+-- Tên có chứa loại pet cần không?
 local function containsPetType(text)
 	local lowerText = string.lower(text)
 	for _, petType in ipairs(petTypes) do
@@ -98,7 +98,7 @@ local function containsPetType(text)
 	return false
 end
 
--- Tìm pet gần nhất phù hợp trong vùng
+-- Tìm pet phù hợp gần nhất
 local function findClosestPet()
 	local nearest, nearestDist = nil, math.huge
 	for _, label in ipairs(workspace:GetDescendants()) do
@@ -117,7 +117,7 @@ local function findClosestPet()
 	return nearest
 end
 
--- Auto loop
+-- Vòng lặp chính
 task.spawn(function()
 	while true do
 		task.wait(checkInterval)
@@ -130,50 +130,51 @@ task.spawn(function()
 	end
 end)
 
--- Lưu tọa độ đầu
+-- Nút: Lưu tọa độ đầu
 setStartBtn.MouseButton1Click:Connect(function()
 	startPos = hrp.Position
 	setStartBtn.Text = "✅ Đã lưu tọa độ đầu"
 end)
 
--- Lưu tọa độ cuối
+-- Nút: Lưu tọa độ cuối
 setEndBtn.MouseButton1Click:Connect(function()
 	endPos = hrp.Position
 	setEndBtn.Text = "✅ Đã lưu tọa độ cuối"
 end)
 
--- Bắt đầu / Dừng
+-- Nút: Bắt đầu
 startBtn.MouseButton1Click:Connect(function()
-	if startPos and endPos then
-		autoRunning = not autoRunning
-		if autoRunning then
-			startBtn.Text = "⏹ Đang chạy..."
-			print("✅ Auto đang chạy...")
+	if not startPos or not endPos then
+		warn("⚠️ startPos hoặc endPos chưa có!")
+		return
+	end
 
-			-- Di chuyển tới điểm bắt đầu
-			humanoid:MoveTo(Vector3.new(startPos.X, hrp.Position.Y, startPos.Z))
+	autoRunning = not autoRunning
+	if autoRunning then
+		startBtn.Text = "⏹ Đang chạy..."
+		print("✅ Auto đang chạy...")
 
-			local timeWaited = 0
-			local reached = false
-			repeat
-				task.wait(0.1)
-				timeWaited += 0.1
-				if (hrp.Position - startPos).Magnitude <= 3 then
-					reached = true
-					break
-				end
-			until timeWaited >= 5 or not autoRunning
+		-- Chạy đến điểm bắt đầu
+		humanoid:MoveTo(Vector3.new(startPos.X, hrp.Position.Y, startPos.Z))
 
-			if reached then
-				print("🕒 Đã đến điểm bắt đầu, bắt đầu săn pet...")
-			else
-				print("⚠️ Không đến được điểm bắt đầu sau 5 giây, vẫn tiếp tục săn...")
+		local timeWaited = 0
+		local reached = false
+		repeat
+			task.wait(0.1)
+			timeWaited += 0.1
+			if (hrp.Position - startPos).Magnitude <= 3 then
+				reached = true
+				break
 			end
+		until timeWaited >= 5 or not autoRunning
+
+		if reached then
+			print("🕒 Đã đến điểm bắt đầu, bắt đầu săn pet...")
 		else
-			startBtn.Text = "▶️ Bắt đầu"
-			print("⏹ Auto đã tắt.")
+			print("⚠️ Không đến được điểm bắt đầu sau 5 giây, vẫn tiếp tục săn...")
 		end
 	else
-		warn("⚠️ Cần lưu tọa độ đầu và cuối hoặc dùng mặc định.")
+		startBtn.Text = "▶️ Bắt đầu"
+		print("⏹ Auto đã tắt.")
 	end
 end)
