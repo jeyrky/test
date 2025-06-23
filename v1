@@ -1,73 +1,134 @@
-local player = game.Players.LocalPlayer
-local replicatedStorage = game:GetService("ReplicatedStorage")
-local tweenService = game:GetService("TweenService")
+-- ✅ AUTO MUA PET "Rare" – GUI + Trạng thái nút + Chạy mượt không lỗi
 
-local function SetTeam(teamName)
-    replicatedStorage.Remotes.CommF_:InvokeServer("SetTeam", teamName)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local lp = Players.LocalPlayer
+local char = lp.Character or lp.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
+local humanoid = char:WaitForChild("Humanoid")
+
+local holdTime = 4
+local followDistance = 1.2
+local checkInterval = 0.2
+
+-- 👉 PET chứa từ khóa sau sẽ được mua (test với Rare)
+local allowedKeywords = { "Rare" }
+
+-- ✅ Tọa độ cố định
+local startPos = Vector3.new(-410.59, -6.50, -134.74)
+local endPos = Vector3.new(-408.79, -6.50, 255.76)
+local autoRunning = false
+
+-- ✅ GUI tạo trong PlayerGui để đảm bảo hiển thị
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AutoPET_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = lp:WaitForChild("PlayerGui")
+
+local function createButton(text, posY)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 220, 0, 40)
+	btn.Position = UDim2.new(0, 10, 0, posY)
+	btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = text
+	btn.Parent = screenGui
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 20
+	btn.BorderSizePixel = 0
+	return btn
 end
 
-local function movePlayer(destination, duration)
-    local humanoidRootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    if (humanoidRootPart) then
-        local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, 0)
-        local tweenGoal = { CFrame = destination }
-        local tween = tweenService:Create(humanoidRootPart, tweenInfo, tweenGoal)
-        tween:Play()
-        tween.Completed:Wait()
-    else
-        warn("HumanoidRootPart not found. Character may not be loaded.")
-    end
+local startBtn = createButton("▶️ Bắt đầu", 100)
+
+-- 🧠 Kiểm tra tên PET có hợp lệ không
+local function isAllowedPet(name)
+	for _, word in ipairs(allowedKeywords) do
+		if string.lower(name):find(string.lower(word)) then
+			return true
+		end
+	end
+	return false
 end
 
-local startPosition = CFrame.new(-1613.46729, 38.532074, 146.637939, -0.858484089, -0.0241556726, -0.512270987, 4.54019755e-07, 0.998890102, -0.0471024923, 0.512840152, -0.0404369533, -0.85753125)
-local endPosition = CFrame.new(-1406.82495, 66.5333252, 2.68874645, -0.870761752, -0.019041121, -0.491336256, 6.69388101e-09, 0.999249935, -0.0387246832, 0.491705179, -0.0337199755, -0.870108545)
+-- 🧲 Giữ phím E đúng 4s
+local function holdEOnPet(pet)
+	local root = pet.root
+	local model = pet.model
+	if not root or not model:IsDescendantOf(workspace) then return end
+	if model:FindFirstChild("Owner") or model:FindFirstChild("NameGui") then return end
 
-local function RandomAction()
-    replicatedStorage.Remotes.CommF_:InvokeServer("Cousin", "Buy")
+	local cash = lp:FindFirstChild("leaderstats") and lp.leaderstats:FindFirstChild("Cash")
+	if not cash then return end
+
+	local cashBefore = cash.Value
+	pcall(function() keypress(0x45) end)
+	local start = tick()
+
+	local followConn = RunService.RenderStepped:Connect(function()
+		if (hrp.Position - root.Position).Magnitude > followDistance then
+			humanoid:MoveTo(Vector3.new(root.Position.X, hrp.Position.Y, root.Position.Z))
+		else
+			humanoid:MoveTo(hrp.Position)
+		end
+	end)
+
+	while tick() - start < holdTime do
+		if not model:IsDescendantOf(workspace) then break end
+		wait(0.1)
+	end
+
+	pcall(function() keyrelease(0x45) end)
+	if followConn then followConn:Disconnect() end
+
+	local cashAfter = cash.Value
+	if cashAfter < cashBefore then
+		print("✅ MUA PET thành công.")
+	else
+		print("❌ Không mua được.")
+	end
 end
 
-local function DropMultipleItemsFromBackpack(quantity)
-    for _, tool in ipairs(player.Backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            tool.Parent = player.Character
-            local toolInCharacter = player.Character:FindFirstChild(tool.Name)
-            if toolInCharacter then
-                toolInCharacter.Parent = game.Workspace
-            end
-        end
-    end
+-- 📍 Kiểm tra xem tọa độ có nằm giữa vùng không
+local function isInZone(pos)
+	if not startPos or not endPos then return false end
+	local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
+	local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
+	return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
 end
 
-local function UnequipTools()
-    for _, tool in ipairs(player.Character:GetChildren()) do
-        if tool:IsA("Tool") then
-            tool.Parent = player.Backpack
-        end
-    end
+-- 🔍 Tìm PET hợp lệ gần nhất
+local function findClosestPet()
+	local nearest, nearestDist = nil, math.huge
+	for _, label in ipairs(workspace:GetDescendants()) do
+		if label:IsA("TextLabel") and isAllowedPet(label.Text) then
+			local model = label:FindFirstAncestorOfClass("Model")
+			local root = model and model:FindFirstChildWhichIsA("BasePart")
+			if root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
+				local dist = (hrp.Position - root.Position).Magnitude
+				if dist < nearestDist then
+					nearest = { model = model, root = root }
+					nearestDist = dist
+				end
+			end
+		end
+	end
+	return nearest
 end
 
-SetTeam("Pirates")
-game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("TravelMain")
-wait(1)
-movePlayer(startPosition, 11)
-game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_"):InvokeServer("SetSpawnPoint")
+-- 🔁 Vòng lặp chính
+task.spawn(function()
+	while true do
+		wait(checkInterval)
+		if autoRunning then
+			local pet = findClosestPet()
+			if pet then holdEOnPet(pet) end
+		end
+	end
+end)
 
-while true do
-    wait(0)
-    local success, errorMessage = pcall(function()
-        movePlayer(endPosition, 0)
-    end)
-    wait(0)
-    RandomAction()
-    wait(0)
-    UnequipTools()
-    wait(1)
-    DropMultipleItemsFromBackpack(200)
-    wait(0)
-
-    if not success then
-        warn("Error during movePlayer:", errorMessage)
-    end
-
-    wait(1)
-end
+-- 🎯 Gán nút chạy
+startBtn.MouseButton1Click:Connect(function()
+	autoRunning = not autoRunning
+	startBtn.Text = autoRunning and "⏹ Đang chạy..." or "▶️ Bắt đầu"
+end)
