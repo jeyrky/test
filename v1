@@ -1,3 +1,5 @@
+-- ✅ AUTO MUA PET "Rare" – GUI + Trạng thái nút + Chạy mượt không lỗi
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local lp = Players.LocalPlayer
@@ -5,24 +7,21 @@ local char = lp.Character or lp.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
 local humanoid = char:WaitForChild("Humanoid")
 
-local holdTime = 3
+local holdTime = 4
 local followDistance = 1.2
 local checkInterval = 0.2
+
+-- 👉 PET chứa từ khóa sau sẽ được mua (test với Rare)
 local allowedKeywords = { "Rare" }
 
--- ✅ VÙNG GIỚI HẠN (thảm đỏ)
-local startPos = Vector3.new(-410.59, -6.5, -134.74)
-local endPos = Vector3.new(-408.79, -6.5, 255.76)
+local startPos, endPos = nil, nil
 local autoRunning = false
 
--- GUI
+-- ✅ GUI tạo trong PlayerGui để đảm bảo hiển thị
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AutoPET_GUI"
 screenGui.ResetOnSpawn = false
-task.spawn(function()
-	repeat wait() until lp:FindFirstChild("PlayerGui")
-	screenGui.Parent = lp:WaitForChild("PlayerGui")
-end)
+screenGui.Parent = lp:WaitForChild("PlayerGui")
 
 local function createButton(text, posY)
 	local btn = Instance.new("TextButton")
@@ -39,8 +38,10 @@ local function createButton(text, posY)
 end
 
 local startBtn = createButton("▶️ Bắt đầu", 100)
+local setStartBtn = createButton("📍 Lưu tọa độ đầu", 150)
+local setEndBtn = createButton("📍 Lưu tọa độ cuối", 200)
 
--- Kiểm tra tên PET
+-- 🧠 Kiểm tra tên PET có hợp lệ không
 local function isAllowedPet(name)
 	for _, word in ipairs(allowedKeywords) do
 		if string.lower(name):find(string.lower(word)) then
@@ -50,43 +51,21 @@ local function isAllowedPet(name)
 	return false
 end
 
--- 📍 Kiểm tra vị trí có nằm trong vùng giới hạn không
-local function isInZone(pos)
-	local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
-	local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
-	return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
-end
-
--- Mua PET (chỉ nếu PET trong vùng)
+-- 🧲 Giữ phím E đúng 4s
 local function holdEOnPet(pet)
 	local root = pet.root
 	local model = pet.model
 	if not root or not model:IsDescendantOf(workspace) then return end
-	if not isInZone(root.Position) then
-		print("⚠️ PET nằm ngoài vùng thảm đỏ → Bỏ qua")
-		return
-	end
+	if model:FindFirstChild("Owner") or model:FindFirstChild("NameGui") then return end
 
-	print("🎯 Mua PET:", model.Name)
+	local cash = lp:FindFirstChild("leaderstats") and lp.leaderstats:FindFirstChild("Cash")
+	if not cash then return end
 
-	local prompt = model:FindFirstChildOfClass("ProximityPrompt") or root:FindFirstChildOfClass("ProximityPrompt")
-	if prompt then
-		fireproximityprompt(prompt)
-		print("✅ Đã fire prompt")
-		return
-	end
-
-	-- Dùng keypress nếu không có prompt
+	local cashBefore = cash.Value
 	pcall(function() keypress(0x45) end)
 	local start = tick()
 
 	local followConn = RunService.RenderStepped:Connect(function()
-		-- Không cho ra khỏi vùng đỏ
-		if not isInZone(root.Position) then
-			humanoid:MoveTo(hrp.Position) -- đứng im
-			return
-		end
-
 		if (hrp.Position - root.Position).Magnitude > followDistance then
 			humanoid:MoveTo(Vector3.new(root.Position.X, hrp.Position.Y, root.Position.Z))
 		else
@@ -95,17 +74,30 @@ local function holdEOnPet(pet)
 	end)
 
 	while tick() - start < holdTime do
-		if not model:IsDescendantOf(workspace) or not isInZone(root.Position) then break end
+		if not model:IsDescendantOf(workspace) then break end
 		wait(0.1)
 	end
 
 	pcall(function() keyrelease(0x45) end)
 	if followConn then followConn:Disconnect() end
 
-	print("✅ Đã thử mua PET")
+	local cashAfter = cash.Value
+	if cashAfter < cashBefore then
+		print("✅ MUA PET thành công.")
+	else
+		print("❌ Không mua được.")
+	end
 end
 
--- Tìm PET hợp lệ gần nhất trong vùng đỏ
+-- 📍 Kiểm tra xem tọa độ có nằm giữa vùng không
+local function isInZone(pos)
+	if not startPos or not endPos then return false end
+	local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
+	local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
+	return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
+end
+
+-- 🔍 Tìm PET hợp lệ gần nhất
 local function findClosestPet()
 	local nearest, nearestDist = nil, math.huge
 	for _, label in ipairs(workspace:GetDescendants()) do
@@ -121,29 +113,36 @@ local function findClosestPet()
 			end
 		end
 	end
-
-	if nearest then
-		print("👀 PET gần nhất:", nearest.model.Name)
-	else
-		print("❌ Không tìm thấy PET trong vùng")
-	end
-
 	return nearest
 end
 
--- Vòng lặp chính
+-- 🔁 Vòng lặp chính
 task.spawn(function()
 	while true do
 		wait(checkInterval)
-		if autoRunning then
+		if autoRunning and startPos and endPos then
 			local pet = findClosestPet()
 			if pet then holdEOnPet(pet) end
 		end
 	end
 end)
 
--- Gán nút chạy
+-- 🎯 Gán nút
+setStartBtn.MouseButton1Click:Connect(function()
+	startPos = hrp.Position
+	setStartBtn.Text = "✅ Đã lưu tọa độ đầu"
+end)
+
+setEndBtn.MouseButton1Click:Connect(function()
+	endPos = hrp.Position
+	setEndBtn.Text = "✅ Đã lưu tọa độ cuối"
+end)
+
 startBtn.MouseButton1Click:Connect(function()
-	autoRunning = not autoRunning
-	startBtn.Text = autoRunning and "⏹ Đang chạy..." or "▶️ Bắt đầu"
+	if startPos and endPos then
+		autoRunning = not autoRunning
+		startBtn.Text = autoRunning and "⏹ Đang chạy..." or "▶️ Bắt đầu"
+	else
+		warn("⚠️ Cần lưu cả tọa độ đầu và cuối trước.")
+	end
 end)
