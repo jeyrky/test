@@ -12,7 +12,7 @@ local followDistance = 1.2
 local checkInterval = 0.2
 
 -- 👉 PET chứa từ khóa sau sẽ được mua (test với Rare)
-local allowedKeywords = { "Rare" }
+local allowedKeywords = { "Legendary", "Mythic", "Secret", "Brainrot God" }
 
 local startPos, endPos = nil, nil
 local autoRunning = false
