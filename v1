@@ -1,5 +1,3 @@
--- ✅ AUTO MUA PET "Rare" – GUI + Trạng thái nút + Chạy mượt không lỗi
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local lp = Players.LocalPlayer
@@ -7,7 +5,7 @@ local char = lp.Character or lp.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
 local humanoid = char:WaitForChild("Humanoid")
 
-local holdTime = 4
+local holdTime = 2
 local followDistance = 1.2
 local checkInterval = 0.2
 
