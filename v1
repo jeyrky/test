@@ -1,146 +1,360 @@
+-- 🔧 Tối ưu FPS + Tắt hiệu ứng Pet - Steal a Brainrot
+
+local Lighting = game:GetService("Lighting")
+local Terrain = workspace:FindFirstChildOfClass("Terrain")
+local Players = game:GetService("Players")
+local UserSettings = UserSettings():GetService("UserGameSettings")
+local lp = Players.LocalPlayer
+game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+
+--⚙️ Tắt hiệu ứng ánh sáng
+Lighting.GlobalShadows = false
+Lighting.FogEnd = 1000000
+Lighting.Brightness = 0
+Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+
+-- ⚙️ Terrain đơn giản hóa
+if Terrain then
+    Terrain.WaterWaveSize = 0
+    Terrain.WaterWaveSpeed = 0
+    Terrain.WaterReflectance = 0
+    Terrain.WaterTransparency = 1
+end
+
+-- ✅ Hàm tắt hiệu ứng: particles, trail, smoke, fire, decals, textures
+local function removeEffects(obj)
+    for _, v in pairs(obj:GetDescendants()) do
+        if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
+            v.Enabled = false
+        elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
+            v.Enabled = false
+        elseif v:IsA("Decal") then
+            v.Transparency = 1
+        elseif v:IsA("Texture") then
+            v:Destroy()
+        end
+    end
+end
+
+-- ⚙️ Gọi hàm cho toàn bộ workspace (bao gồm cả Pet)
+removeEffects(workspace)
+
+-- ⚙️ Tự động tắt hiệu ứng khi có nhân vật hoặc pet mới xuất hiện
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("PointLight") or obj:IsA("Decal") then
+        task.wait(0.1)
+        pcall(function()
+            if obj:IsA("Texture") then obj:Destroy()
+            elseif obj:IsA("Decal") then obj.Transparency = 1
+            else obj.Enabled = false
+            end
+        end)
+    end
+end)
+
+-- ⚙️ Giảm chất lượng đồ họa xuống thấp nhất
+pcall(function()
+    UserSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+end)
+
+-- ⚙️ Khi nhân vật mới spawn
+lp.CharacterAdded:Connect(function(char)
+    removeEffects(char)
+end)
+
+-- ============================
+-- TẮT MÀU HIỆU ỨNG CỦA PET
+-- ============================
+
+local function disablePetEffects(pet)
+    if not pet then return end
+    for _, v in pairs(pet:GetDescendants()) do
+        if v:IsA("ParticleEmitter") then
+            v.Enabled = false
+        elseif v:IsA("Light") then
+            v.Enabled = false
+        elseif v:IsA("Decal") then
+            v.Transparency = 1
+        elseif v:IsA("Texture") then
+            v:Destroy()
+        end
+        -- Thêm các phần tử khác nếu Pet của bạn còn hiệu ứng màu khác
+    end
+end
+
+-- Giả sử tên Pet là "Pet" hoặc bạn biết cách xác định đúng object của Pet
+-- Nếu không rõ, bạn có thể chỉnh theo tên hoặc cấu trúc của Pet trong game
+local function checkAndDisablePet()
+    local pet = workspace:FindFirstChild("Pet") -- Thay "Pet" bằng tên đúng của Pet
+    if pet then
+        disablePetEffects(pet)
+    end
+end
+
+-- Kiểm tra khi game bắt đầu
+checkAndDisablePet()
+
+-- Ngoài ra, có thể lắng nghe khi Pet spawn mới
+workspace.ChildAdded:Connect(function(child)
+    if child.Name == "Pet" then -- Thay bằng tên đúng của Pet
+        task.wait(0.2)
+        disablePetEffects(child)
+    end
+end)
+
+print("✅ Giảm đồ hoạ, tắt hiệu ứng Pet và hiệu ứng màu hoàn tất!")
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInput = game:GetService("VirtualInputManager")
+
 local lp = Players.LocalPlayer
 local char = lp.Character or lp.CharacterAdded:Wait()
 local hrp = char:WaitForChild("HumanoidRootPart")
 local humanoid = char:WaitForChild("Humanoid")
 
-local holdTime = 2
+local holdTime = 3
+local restTime = 0.7
 local followDistance = 1.2
-local checkInterval = 0.2
+local checkInterval = 1.2
 
--- 👉 PET chứa từ khóa sau sẽ được mua (test với Rare)
-local allowedKeywords = { "Brainrot God", "Secret", }
-
+local allowedKeywords = { "Brainrot God", "Secret" }
 local startPos, endPos = nil, nil
 local autoRunning = false
+local lastPet = nil
 
--- ✅ GUI tạo trong PlayerGui để đảm bảo hiển thị
+-- Tạo GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AutoPET_GUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = lp:WaitForChild("PlayerGui")
 
 local function createButton(text, posY)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(0, 220, 0, 40)
-	btn.Position = UDim2.new(0, 10, 0, posY)
-	btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.Text = text
-	btn.Parent = screenGui
-	btn.Font = Enum.Font.SourceSansBold
-	btn.TextSize = 20
-	btn.BorderSizePixel = 0
-	return btn
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 220, 0, 40)
+    btn.Position = UDim2.new(0, 10, 0, posY)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Text = text
+    btn.Parent = screenGui
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 20
+    btn.BorderSizePixel = 0
+    return btn
 end
 
 local startBtn = createButton("▶️ Bắt đầu", 100)
 local setStartBtn = createButton("📍 Lưu tọa độ đầu", 150)
 local setEndBtn = createButton("📍 Lưu tọa độ cuối", 200)
 
--- 🧠 Kiểm tra tên PET có hợp lệ không
+-- Hàm kiểm tra tên pet
 local function isAllowedPet(name)
-	for _, word in ipairs(allowedKeywords) do
-		if string.lower(name):find(string.lower(word)) then
-			return true
-		end
-	end
-	return false
+    for _, word in ipairs(allowedKeywords) do
+        if string.lower(name):find(string.lower(word)) then
+            return true
+        end
+    end
+    return false
 end
 
--- 🧲 Giữ phím E đúng 4s
-local function holdEOnPet(pet)
-	local root = pet.root
-	local model = pet.model
-	if not root or not model:IsDescendantOf(workspace) then return end
-	if model:FindFirstChild("Owner") or model:FindFirstChild("NameGui") then return end
-
-	local cash = lp:FindFirstChild("leaderstats") and lp.leaderstats:FindFirstChild("Cash")
-	if not cash then return end
-
-	local cashBefore = cash.Value
-	pcall(function() keypress(0x45) end)
-	local start = tick()
-
-	local followConn = RunService.RenderStepped:Connect(function()
-		if (hrp.Position - root.Position).Magnitude > followDistance then
-			humanoid:MoveTo(Vector3.new(root.Position.X, hrp.Position.Y, root.Position.Z))
-		else
-			humanoid:MoveTo(hrp.Position)
-		end
-	end)
-
-	while tick() - start < holdTime do
-		if not model:IsDescendantOf(workspace) then break end
-		wait(0.1)
-	end
-
-	pcall(function() keyrelease(0x45) end)
-	if followConn then followConn:Disconnect() end
-
-	local cashAfter = cash.Value
-	if cashAfter < cashBefore then
-		print("✅ MUA PET thành công.")
-	else
-		print("❌ Không mua được.")
-	end
-end
-
--- 📍 Kiểm tra xem tọa độ có nằm giữa vùng không
+-- Kiểm tra tọa độ vùng
 local function isInZone(pos)
-	if not startPos or not endPos then return false end
-	local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
-	local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
-	return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
+    if not startPos or not endPos then return false end
+    local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
+    local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
+    return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
 end
 
--- 🔍 Tìm PET hợp lệ gần nhất
+-- Tìm PET gần nhất
 local function findClosestPet()
-	local nearest, nearestDist = nil, math.huge
-	for _, label in ipairs(workspace:GetDescendants()) do
-		if label:IsA("TextLabel") and isAllowedPet(label.Text) then
-			local model = label:FindFirstAncestorOfClass("Model")
-			local root = model and model:FindFirstChildWhichIsA("BasePart")
-			if root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
-				local dist = (hrp.Position - root.Position).Magnitude
-				if dist < nearestDist then
-					nearest = { model = model, root = root }
-					nearestDist = dist
-				end
-			end
-		end
-	end
-	return nearest
+    local nearest, nearestDist = nil, math.huge
+    for _, label in ipairs(workspace:GetDescendants()) do
+        if label:IsA("TextLabel") then
+            local name = label.Text
+            if isAllowedPet(name) then
+                local model = label:FindFirstAncestorOfClass("Model")
+                local root = model and model:FindFirstChildWhichIsA("BasePart")
+                if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
+                    local dist = (hrp.Position - root.Position).Magnitude
+                    if dist < nearestDist then
+                        nearest = { model = model, root = root, name = name }
+                        nearestDist = dist
+                    end
+                end
+            end
+        end
+    end
+
+    if nearest then
+        print("✅ Tìm thấy PET:", nearest.name, "Cách:", math.floor(nearestDist))
+    else
+        print("🔍 Không tìm thấy PET phù hợp.")
+    end
+
+    return nearest
 end
 
--- 🔁 Vòng lặp chính
+-- Giữ phím E thật
+local function pressE(seconds)
+    VirtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    wait(seconds)
+    VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+-- Theo dõi PET và giữ E
+local function holdEOnPet(pet)
+    if not pet or not pet.root or not pet.model then return end
+    print("🚶‍♂️ Di chuyển đến PET:", pet.name)
+
+    -- Di chuyển đến gần
+    local moveStart = tick()
+    while tick() - moveStart < 5 do
+        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then return end
+        local dist = (hrp.Position - pet.root.Position).Magnitude
+        if dist <= followDistance then break end
+        humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
+        wait(0.1)
+    end
+
+    -- Theo dõi PET
+    local followConn
+    followConn = RunService.RenderStepped:Connect(function()
+        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
+            followConn:Disconnect()
+            return
+        end
+        local dist = (hrp.Position - pet.root.Position).Magnitude
+        if dist > followDistance then
+            humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
+        else
+            humanoid:MoveTo(hrp.Position)
+        end
+    end)
+
+    -- Giữ E liên tục
+    while true do
+        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
+            print("❌ PET biến mất hoặc ra khỏi vùng.")
+            break
+        end
+        pressE(holdTime)
+        wait(restTime)
+    end
+
+    if followConn then followConn:Disconnect() end
+    print("🛑 Dừng theo PET:", pet.name)
+end
+
+-- Vòng tìm PET
 task.spawn(function()
-	while true do
-		wait(checkInterval)
-		if autoRunning and startPos and endPos then
-			local pet = findClosestPet()
-			if pet then holdEOnPet(pet) end
-		end
-	end
+    while true do
+        wait(checkInterval)
+        if autoRunning and startPos and endPos then
+            local pet = findClosestPet()
+            if pet and (not lastPet or pet.model ~= lastPet.model) then
+                lastPet = pet
+                holdEOnPet(pet)
+            elseif not pet then
+                lastPet = nil
+            end
+        end
+    end
 end)
 
--- 🎯 Gán nút
+-- Nút GUI
 setStartBtn.MouseButton1Click:Connect(function()
-	startPos = hrp.Position
-	setStartBtn.Text = "✅ Đã lưu tọa độ đầu"
+    startPos = hrp.Position
+    setStartBtn.Text = "✅ Đã lưu tọa độ đầu"
 end)
 
 setEndBtn.MouseButton1Click:Connect(function()
-	endPos = hrp.Position
-	setEndBtn.Text = "✅ Đã lưu tọa độ cuối"
+    endPos = hrp.Position
+    setEndBtn.Text = "✅ Đã lưu tọa độ cuối"
 end)
 
 startBtn.MouseButton1Click:Connect(function()
-	if startPos and endPos then
-		autoRunning = not autoRunning
-		startBtn.Text = autoRunning and "⏹ Đang chạy..." or "▶️ Bắt đầu"
-	else
-		warn("⚠️ Cần lưu cả tọa độ đầu và cuối trước.")
-	end
+    if startPos and endPos then
+        autoRunning = not autoRunning
+        startBtn.Text = autoRunning and "⏹ Đang chạy..." or "▶️ Bắt đầu"
+    else
+        warn("⚠️ Cần lưu tọa độ đầu và cuối trước.")
+    end
 end)
+
+-- Auto đi lại mỗi 5 phút
+local function autoWalkBetweenPoints()
+    local running = false
+    local function moveTo(pos)
+        humanoid:MoveTo(Vector3.new(pos.X, hrp.Position.Y, pos.Z))
+        local timeout = 15
+        local startTime = tick()
+        while (hrp.Position - pos).Magnitude > 3 and tick() - startTime < timeout do
+            if not autoRunning then break end
+            wait(0.2)
+        end
+    end
+
+    task.spawn(function()
+        while true do
+            if not autoRunning then wait(1) continue end
+            wait(300)
+            if startPos and endPos and not running then
+                running = true
+                print("➡️ Đi đến cuối")
+                moveTo(endPos)
+                wait(1)
+                print("⬅️ Quay về đầu")
+                moveTo(startPos)
+                running = false
+            end
+        end
+    end)
+end
+
+autoWalkBetweenPoints()
+
+
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
+local char = lp.Character or lp.CharacterAdded:Wait()
+local humanoid = char:WaitForChild("Humanoid")
+local hrp = char:WaitForChild("HumanoidRootPart")
+
+local positions = {
+	Vector3.new(-414.36, -6.50, 75.70),    -- 📍Vị trí 1
+	Vector3.new(-410.32, -6.50, 255.72),   -- 📍Vị trí 2
+	Vector3.new(-411.93, -6.50, -137.21),  -- 📍Vị trí 3
+}
+
+-- Tạo GUI cho nút
+local tpGui = Instance.new("ScreenGui")
+tpGui.Name = "TP_Run_GUI"
+tpGui.ResetOnSpawn = false
+tpGui.Parent = lp:WaitForChild("PlayerGui")
+
+local function createRunButton(name, posY, position)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 180, 0, 40)
+	btn.Position = UDim2.new(1, -190, 0, posY)
+	btn.AnchorPoint = Vector2.new(0, 0)
+	btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 20
+	btn.Text = name
+	btn.Parent = tpGui
+
+	btn.MouseButton1Click:Connect(function()
+		local character = lp.Character or lp.CharacterAdded:Wait()
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid:MoveTo(position)
+		end
+	end)
+end
+
+-- Tạo 3 nút
+createRunButton("🏃 Tới điểm 1", 100, positions[1])
+createRunButton("🏃 Tới điểm 2", 150, positions[2])
+createRunButton("🏃 Tới điểm 3", 200, positions[3])
