@@ -298,7 +298,7 @@ local function autoWalkBetweenPoints()
     task.spawn(function()
         while true do
             if not autoRunning then wait(1) continue end
-            wait(5)
+            wait(1)
             if startPos and endPos and not running then
                 running = true
                 print("➡️ Đi đến cuối")
