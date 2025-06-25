@@ -360,7 +360,7 @@ createRunButton("🏃 Tới điểm 2", 150, positions[2])
 createRunButton("🏃 Tới điểm 3", 200, positions[3])
 
 task.spawn(function()
-    wait(1) -- Đợi game load xong
+    wait(1) -- Đợi game load
 
     local function moveTo(pos)
         humanoid:MoveTo(Vector3.new(pos.X, hrp.Position.Y, pos.Z))
@@ -369,52 +369,52 @@ task.spawn(function()
         while (hrp.Position - pos).Magnitude > 3 and tick() - startTime < timeout do
             wait(0.2)
         end
-        wait(2) -- Đợi 2s sau khi đến nơi
+        wait(2)
     end
 
-    -- ✅ Đến vị trí 1
+    -- Đảm bảo GUI đã load xong
+    local gui = nil
+    repeat
+        gui = lp:FindFirstChild("PlayerGui"):FindFirstChild("AutoPET_GUI")
+        wait(0.5)
+    until gui
+
+    local function clickButtonByText(text)
+        for _, v in pairs(gui:GetChildren()) do
+            if v:IsA("TextButton") and v.Text == text then
+                v:MouseButton1Click:Connect(function() end) -- Patch nếu cần
+                v:Activate()
+                print("✅ Đã ấn nút:", text)
+                return true
+            end
+        end
+        warn("❌ Không tìm thấy nút:", text)
+        return false
+    end
+
+    -- ✅ Đến Vị trí 1
     print("➡️ Đi đến Vị trí 1")
     moveTo(Vector3.new(-414.36, -6.50, 75.70))
 
-    -- ✅ Đến vị trí 2
+    -- ✅ Đến Vị trí 2
     print("➡️ Đi đến Vị trí 2")
     moveTo(Vector3.new(-410.32, -6.50, 255.72))
 
-    -- ⏺ Lưu tọa độ cuối
-    print("📍 Bấm nút lưu tọa độ cuối")
-    pcall(function()
-        local gui = lp:WaitForChild("PlayerGui"):FindFirstChild("AutoPET_GUI")
-        if gui then
-            gui["📍 Lưu tọa độ cuối"]:Activate()
-        end
-    end)
+    -- 🧠 Ấn Lưu Tọa độ Cuối
+    clickButtonByText("📍 Lưu tọa độ cuối")
+    wait(1)
 
-    -- ✅ Đến vị trí 3 (lần 1)
-    print("➡️ Đi đến Vị trí 3 (Lần 1)")
+    -- ✅ Đến Vị trí 3 (2 lần)
+    print("➡️ Đi đến Vị trí 3 (1)")
     moveTo(Vector3.new(-411.93, -6.50, -137.21))
 
-    -- ✅ Đến vị trí 3 (lần 2)
-    print("➡️ Đi đến Vị trí 3 (Lần 2)")
+    print("➡️ Đi đến Vị trí 3 (2)")
     moveTo(Vector3.new(-411.93, -6.50, -137.21))
 
-    -- ⏺ Lưu tọa độ đầu
-    print("📍 Bấm nút lưu tọa độ đầu")
-    pcall(function()
-        local gui = lp:WaitForChild("PlayerGui"):FindFirstChild("AutoPET_GUI")
-        if gui then
-            gui["📍 Lưu tọa độ đầu"]:Activate()
-        end
-    end)
-
-    -- 🕒 Chờ 3 giây
+    -- 🧠 Ấn Lưu Tọa độ Đầu
+    clickButtonByText("📍 Lưu tọa độ đầu")
     wait(3)
 
     -- ▶️ Bắt đầu
-    print("▶️ Bấm nút Bắt đầu")
-    pcall(function()
-        local gui = lp:WaitForChild("PlayerGui"):FindFirstChild("AutoPET_GUI")
-        if gui then
-            gui["▶️ Bắt đầu"]:Activate()
-        end
-    end)
+    clickButtonByText("▶️ Bắt đầu")
 end)
