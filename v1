@@ -116,8 +116,8 @@ local humanoid = char:WaitForChild("Humanoid")
 
 local holdTime = 3
 local restTime = 0.7
-local followDistance = 1.2
-local checkInterval = 2
+local followDistance = 1
+local checkInterval = 3
 
 local allowedKeywords = { "Brainrot God", "Secret" }
 local startPos, endPos = nil, nil
