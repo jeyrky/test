@@ -117,7 +117,7 @@ local humanoid = char:WaitForChild("Humanoid")
 local holdTime = 3
 local restTime = 0.7
 local followDistance = 1
-local checkInterval = 3
+local checkInterval = 5
 
 local allowedKeywords = { "Brainrot God", "Secret" }
 local startPos, endPos = nil, nil
@@ -298,7 +298,7 @@ local function autoWalkBetweenPoints()
     task.spawn(function()
         while true do
             if not autoRunning then wait(1) continue end
-            wait(120)
+            wait(1)
             if startPos and endPos and not running then
                 running = true
                 print("➡️ Đi đến cuối")
