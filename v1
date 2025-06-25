@@ -360,20 +360,8 @@ task.spawn(function()
     local char = lp.Character or lp.CharacterAdded:Wait()
     local hrp = char:WaitForChild("HumanoidRootPart")
     local humanoid = char:WaitForChild("Humanoid")
-    local VirtualInput = game:GetService("VirtualInputManager")
 
-    -- ✅ 📌 ANH NHẬP TỌA ĐỘ NÚT TẠI ĐÂY
-    local nutLuuCuoi = Vector2.new(366.4, 725.5)      -- 📍 Lưu tọa độ cuối
-    local nutLuuDau  = Vector2.new(354.0, 594.9)      -- 📍 Lưu tọa độ đầu
-    local nutBatDau  = Vector2.new(335.3, 458.0)      -- ▶️ Bắt đầu
-
-    -- ✅ Hàm click theo tọa độ
-    local function clickAt(pos)
-        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
-        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
-    end
-
-    -- Di chuyển nhân vật
+    -- ✅ HÀM DI CHUYỂN
     local function moveTo(pos)
         humanoid:MoveTo(Vector3.new(pos.X, hrp.Position.Y, pos.Z))
         local timeout = 20
@@ -384,25 +372,37 @@ task.spawn(function()
         wait(2)
     end
 
-    -- ==== ⚙️ TỰ ĐỘNG QUY TRÌNH ====
+    -- ✅ HÀM GIẢ CLICK NÚT BẰNG TEXT
+    local function clickButtonByText(text)
+        local gui = lp:FindFirstChild("PlayerGui"):FindFirstChild("AutoPET_GUI")
+        if not gui then warn("❌ Không tìm thấy GUI AutoPET_GUI") return end
+
+        for _, btn in pairs(gui:GetChildren()) do
+            if btn:IsA("TextButton") and btn.Text == text then
+                print("✅ Click nút:", text)
+                pcall(function()
+                    btn:Activate()
+                end)
+                return
+            end
+        end
+        warn("❌ Không tìm thấy nút:", text)
+    end
+
+    -- === QUY TRÌNH DI CHUYỂN + CLICK ===
     print("➡️ Tới vị trí 1")
     moveTo(Vector3.new(-414.36, -6.50, 75.70))
 
     print("➡️ Tới vị trí 2")
     moveTo(Vector3.new(-410.32, -6.50, 255.72))
-    print("🖱️ Bấm: Lưu tọa độ cuối")
-    clickAt(nutLuuCuoi)
+    clickButtonByText("📍 Lưu tọa độ cuối")
     wait(1)
 
-    print("➡️ Tới vị trí 3 (1)")
+    print("➡️ Tới vị trí 3")
     moveTo(Vector3.new(-411.93, -6.50, -137.21))
-    print("➡️ Tới vị trí 3 (2)")
-    moveTo(Vector3.new(-411.93, -6.50, -137.21))
-    print("🖱️ Bấm: Lưu tọa độ đầu")
-    clickAt(nutLuuDau)
+    clickButtonByText("📍 Lưu tọa độ đầu")
+    wait(1)
 
-    wait(3)
-    print("🖱️ Bấm: Bắt đầu")
-    clickAt(nutBatDau)
+    print("▶️ Bắt đầu tự động")
+    clickButtonByText("▶️ Bắt đầu")
 end)
-
