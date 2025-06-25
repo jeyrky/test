@@ -354,11 +354,6 @@ local function createRunButton(name, posY, position)
 	end)
 end
 
--- Tạo 3 nút
-createRunButton("🏃 Tới điểm 1", 100, positions[1])
-createRunButton("🏃 Tới điểm 2", 150, positions[2])
-createRunButton("🏃 Tới điểm 3", 200, positions[3])
-
 task.spawn(function()
     local Players = game:GetService("Players")
     local lp = Players.LocalPlayer
@@ -367,7 +362,18 @@ task.spawn(function()
     local humanoid = char:WaitForChild("Humanoid")
     local VirtualInput = game:GetService("VirtualInputManager")
 
-    -- Di chuyển
+    -- ✅ 📌 ANH NHẬP TỌA ĐỘ NÚT TẠI ĐÂY
+    local nutLuuCuoi = Vector2.new(366.4, 725.5)      -- 📍 Lưu tọa độ cuối
+    local nutLuuDau  = Vector2.new(354.0, 594.9)      -- 📍 Lưu tọa độ đầu
+    local nutBatDau  = Vector2.new(335.3, 458.0)      -- ▶️ Bắt đầu
+
+    -- ✅ Hàm click theo tọa độ
+    local function clickAt(pos)
+        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+        VirtualInput:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+    end
+
+    -- Di chuyển nhân vật
     local function moveTo(pos)
         humanoid:MoveTo(Vector3.new(pos.X, hrp.Position.Y, pos.Z))
         local timeout = 20
@@ -378,40 +384,25 @@ task.spawn(function()
         wait(2)
     end
 
-    -- Bấm nút bằng vị trí màn hình
-    local function clickGuiButtonByText(text)
-        local gui = lp:WaitForChild("PlayerGui"):FindFirstChild("AutoPET_GUI")
-        if not gui then return end
-        for _, btn in pairs(gui:GetChildren()) do
-            if btn:IsA("TextButton") and btn.Text == text then
-                local absPos = btn.AbsolutePosition
-                local absSize = btn.AbsoluteSize
-                local clickX = absPos.X + absSize.X / 2
-                local clickY = absPos.Y + absSize.Y / 2
-                print("🖱️ Click vào:", text)
-                VirtualInput:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0)
-                VirtualInput:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
-                return
-            end
-        end
-        warn("❌ Không tìm thấy nút:", text)
-    end
-
-    -- ==== QUY TRÌNH TỰ ĐỘNG ====
+    -- ==== ⚙️ TỰ ĐỘNG QUY TRÌNH ====
     print("➡️ Tới vị trí 1")
     moveTo(Vector3.new(-414.36, -6.50, 75.70))
 
     print("➡️ Tới vị trí 2")
     moveTo(Vector3.new(-410.32, -6.50, 255.72))
-    clickGuiButtonByText("📍 Lưu tọa độ cuối")
+    print("🖱️ Bấm: Lưu tọa độ cuối")
+    clickAt(nutLuuCuoi)
     wait(1)
 
     print("➡️ Tới vị trí 3 (1)")
     moveTo(Vector3.new(-411.93, -6.50, -137.21))
     print("➡️ Tới vị trí 3 (2)")
     moveTo(Vector3.new(-411.93, -6.50, -137.21))
-    clickGuiButtonByText("📍 Lưu tọa độ đầu")
+    print("🖱️ Bấm: Lưu tọa độ đầu")
+    clickAt(nutLuuDau)
 
     wait(3)
-    clickGuiButtonByText("▶️ Bắt đầu")
+    print("🖱️ Bấm: Bắt đầu")
+    clickAt(nutBatDau)
 end)
+
