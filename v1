@@ -86,7 +86,8 @@ local allowedKeywords = { "Brainrot God", "Secret" }
 -- ⛔ Danh sách PET cần bỏ qua
 local blacklistNames = {
     ["Cocofanto Elefanto"] = true,
-    ["Girafa Celestre"]    = true
+    ["Girafa Celestre"] = true,
+    ["Gattatino Nyanino"] = true
 }
 
 local lastPet     = nil
