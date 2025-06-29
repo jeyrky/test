@@ -1,15 +1,15 @@
 -- 🔧 Tối ưu FPS + Tắt hiệu ứng Pet
 
-local Lighting = game:GetService("Lighting")
-local Terrain = workspace:FindFirstChildOfClass("Terrain")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local Lighting     = game:GetService("Lighting")
+local Terrain      = workspace:FindFirstChildOfClass("Terrain")
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
 local UserSettings = UserSettings():GetService("UserGameSettings")
 local VirtualInput = game:GetService("VirtualInputManager")
 
-local lp = Players.LocalPlayer
-local char = lp.Character or lp.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
+local lp       = Players.LocalPlayer
+local char     = lp.Character or lp.CharacterAdded:Wait()
+local hrp      = char:WaitForChild("HumanoidRootPart")
 local humanoid = char:WaitForChild("Humanoid")
 
 -- Tắt GUI mặc định
@@ -18,17 +18,17 @@ pcall(function()
 end)
 
 -- ⚙️ Tắt ánh sáng
-Lighting.GlobalShadows = false
-Lighting.FogEnd = 1000000
-Lighting.Brightness = 0
-Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+Lighting.GlobalShadows   = false
+Lighting.FogEnd          = 1000000
+Lighting.Brightness      = 0
+Lighting.OutdoorAmbient  = Color3.fromRGB(128, 128, 128)
 
 -- ⚙️ Terrain
 if Terrain then
-    Terrain.WaterWaveSize = 0
-    Terrain.WaterWaveSpeed = 0
-    Terrain.WaterReflectance = 0
-    Terrain.WaterTransparency = 1
+    Terrain.WaterWaveSize      = 0
+    Terrain.WaterWaveSpeed     = 0
+    Terrain.WaterReflectance   = 0
+    Terrain.WaterTransparency  = 1
 end
 
 -- ⚙️ Tắt hiệu ứng toàn map
@@ -52,8 +52,10 @@ removeEffects(workspace)
 workspace.DescendantAdded:Connect(function(obj)
     task.wait(0.1)
     pcall(function()
-        if obj:IsA("Texture") then obj:Destroy()
-        elseif obj:IsA("Decal") then obj.Transparency = 1
+        if obj:IsA("Texture") then
+            obj:Destroy()
+        elseif obj:IsA("Decal") then
+            obj.Transparency = 1
         elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("PointLight") then
             obj.Enabled = false
         end
@@ -66,28 +68,38 @@ pcall(function()
 end)
 
 -- ⚙️ Khi nhân vật spawn
-lp.CharacterAdded:Connect(function(char)
-    removeEffects(char)
+lp.CharacterAdded:Connect(function(c)
+    removeEffects(c)
 end)
 
 -- ===========================
 -- 🚀 Auto ăn PET "Secret" / "Brainrot God"
 -- ===========================
 
-local holdTime = 3
-local restTime = 0.7
-local followDistance = 1
-local checkInterval = 5
+local holdTime       = 3        -- thời gian giữ phím E
+local restTime       = 0.7      -- nghỉ giữa các lần ăn
+local followDistance = 1        -- khoảng cách bám theo
+local checkInterval  = 5        -- tần suất quét pet (s)
 
 local allowedKeywords = { "Brainrot God", "Secret" }
-local lastPet = nil
 
--- Gắn sẵn vùng quét
-local startPos = Vector3.new(-410.32, -6.50, 255.72)
-local endPos = Vector3.new(-411.93, -6.50, -137.21)
+-- ⛔ Danh sách PET cần bỏ qua
+local blacklistNames = {
+    ["Cocofanto Elefanto"] = true,
+    ["Girafa Celestre"]    = true
+}
+
+local lastPet     = nil
+local startPos    = Vector3.new(-410.32, -6.50, 255.72)
+local endPos      = Vector3.new(-411.93, -6.50, -137.21)
 local autoRunning = true
 
 local function isAllowedPet(name)
+    -- Nếu tên nằm trong blacklist thì loại
+    if blacklistNames[name] then
+        return false
+    end
+    -- Nếu khớp keyword thì chấp nhận
     for _, word in ipairs(allowedKeywords) do
         if string.lower(name):find(string.lower(word)) then
             return true
@@ -110,39 +122,40 @@ local function findClosestPet()
             local name = label.Text
             if isAllowedPet(name) then
                 local model = label:FindFirstAncestorOfClass("Model")
-                local root = model and model:FindFirstChildWhichIsA("BasePart")
+                local root  = model and model:FindFirstChildWhichIsA("BasePart")
                 if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
                     local dist = (hrp.Position - root.Position).Magnitude
                     if dist < nearestDist then
-                        nearest = { model = model, root = root, name = name }
-                        nearestDist = dist
+                        nearest      = { model = model, root = root }
+                        nearestDist  = dist
                     end
                 end
             end
         end
     end
-
     return nearest
 end
 
 local function pressE(seconds)
     VirtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    wait(seconds)
+    task.wait(seconds)
     VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
 local function holdEOnPet(pet)
     if not pet or not pet.root or not pet.model then return end
 
-    local moveStart = tick()
-    while tick() - moveStart < 5 do
+    -- Tiến lại gần pet (tối đa 5 giây)
+    local t0 = tick()
+    while tick() - t0 < 5 do
         if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then return end
         local dist = (hrp.Position - pet.root.Position).Magnitude
         if dist <= followDistance then break end
         humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
-        wait(0.1)
+        task.wait(0.1)
     end
 
+    -- Giữ khoảng cách và spam E
     local followConn
     followConn = RunService.RenderStepped:Connect(function()
         if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
@@ -157,10 +170,9 @@ local function holdEOnPet(pet)
         end
     end)
 
-    while true do
-        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then break end
+    while pet.model:IsDescendantOf(workspace) and isInZone(pet.root.Position) do
         pressE(holdTime)
-        wait(restTime)
+        task.wait(restTime)
     end
 
     if followConn then followConn:Disconnect() end
@@ -169,7 +181,7 @@ end
 -- Vòng tìm PET tự động
 task.spawn(function()
     while true do
-        wait(checkInterval)
+        task.wait(checkInterval)
         if autoRunning then
             local pet = findClosestPet()
             if pet and (not lastPet or pet.model ~= lastPet.model) then
@@ -182,23 +194,23 @@ task.spawn(function()
     end
 end)
 
--- 🚶 Auto đi qua lại giữa 2 điểm (chạy xa mượt, không bị đứng giữa đường)
+-- 🚶 Auto đi qua lại giữa 2 điểm
 local function autoWalkBetweenPoints()
     local function moveTo(pos)
-        local stepSize = 20
+        local stepSize   = 20
         local currentPos = hrp.Position
 
         while (currentPos - pos).Magnitude > 3 do
             if not autoRunning then break end
 
-            local direction = (pos - currentPos).Unit
-            local nextPos = currentPos + direction * math.min(stepSize, (pos - currentPos).Magnitude)
+            local dir     = (pos - currentPos).Unit
+            local nextPos = currentPos + dir * math.min(stepSize, (pos - currentPos).Magnitude)
 
             humanoid:MoveTo(Vector3.new(nextPos.X, hrp.Position.Y, nextPos.Z))
 
-            local startTick = tick()
-            while (hrp.Position - nextPos).Magnitude > 3 and tick() - startTick < 2 do
-                wait(0.1)
+            local t0 = tick()
+            while (hrp.Position - nextPos).Magnitude > 3 and tick() - t0 < 2 do
+                task.wait(0.1)
             end
 
             currentPos = hrp.Position
@@ -208,12 +220,12 @@ local function autoWalkBetweenPoints()
     task.spawn(function()
         while true do
             if autoRunning then
-                wait(1)
+                task.wait(1)
                 moveTo(endPos)
-                wait(1)
+                task.wait(1)
                 moveTo(startPos)
             else
-                wait(1)
+                task.wait(1)
             end
         end
     end)
