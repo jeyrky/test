@@ -233,3 +233,28 @@ local function autoWalkBetweenPoints()
 end
 
 autoWalkBetweenPoints()
+
+-- Thêm phần tự động nhảy và xem phim
+local function autoJumpAndPlay()
+    while true do
+        -- Nhảy sau mỗi 30 giây
+        task.wait(30)
+        VirtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+        task.wait(0.1)
+        VirtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+
+        -- Chờ 15 giây sau khi nhảy để không bị chồng chéo
+        task.wait(15)
+
+        -- Nhấn phím 1 sau 45 giây
+        VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+        task.wait(0.1)
+        VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+
+        -- Đợi 45 giây nữa trước lần tiếp theo
+        task.wait(45)
+    end
+end
+
+-- Gọi hàm này để bắt đầu vòng lặp
+task.spawn(autoJumpAndPlay)
