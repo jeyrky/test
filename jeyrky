@@ -6,7 +6,7 @@ local blacklistNames  = {
     ["Gattatino Nyanino"]  = true
 }
 
-local holdTime  = 3      -- giữ phím E bao lâu
+local holdTime  = 4      -- giữ phím E bao lâu
 local restTime  = 0      -- nghỉ giữa các lần (hiện chưa dùng)
 local checkInterval = 0.1
 --===================================================
