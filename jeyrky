@@ -1,5 +1,5 @@
 --================= TUỲ CHỈNH NHANH =================
-local allowedKeywords = { "Rare", "Common" }
+local allowedKeywords = { "Rare", "Common", "Epic", "Brainrot God", "Legendary", "Mythic" , "Secret"  }
 local blacklistNames  = {
     ["Cocofanto Elefanto"] = true,
     ["Girafa Celestre"]    = true,
