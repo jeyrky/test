@@ -105,23 +105,37 @@ local function isAllowedPet(name)
    return false
 end
 
-local function findClosestPet()
-   local near,dist=nil,math.huge
-   for _,lbl in ipairs(workspace:GetDescendants()) do
+local function findClosestPet(retry)
+   retry = retry or 0
+   local validPets = {}
+
+   for _, lbl in ipairs(workspace:GetDescendants()) do
       if lbl:IsA("TextLabel") then
-         local name=lbl.Text
+         local name = lbl.Text
          if isAllowedPet(name) then
-            local model=lbl:FindFirstAncestorOfClass("Model")
+            local model = lbl:FindFirstAncestorOfClass("Model")
             local root = model and model:FindFirstChildWhichIsA("BasePart")
             if model and root and isInsideQuad(root.Position) then
-               local d=(hrp.Position-root.Position).Magnitude
-               if d<dist then near,dist={model=model,root=root},d end
+               table.insert(validPets, {model = model, root = root})
             end
          end
       end
    end
-   return near
+
+   -- Nếu chưa tìm thấy => retry tối đa 5 lần
+   if #validPets == 0 and retry < 5 then
+      task.wait(0.2)
+      return findClosestPet(retry + 1)
+   end
+
+   -- Chọn pet ngẫu nhiên từ danh sách hợp lệ
+   if #validPets > 0 then
+      return validPets[math.random(1, #validPets)]
+   end
+
+   return nil
 end
+
 
 local function pressE(sec)
    VirtualInput:SendKeyEvent(true,Enum.KeyCode.E,false,game)
