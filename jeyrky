@@ -139,7 +139,7 @@ local function moveToPos(pos)
    local timeout = tick()
    repeat
       task.wait(0.05)
-   until not autoRunning or (hrp.Position - dest).Magnitude <= 3 or tick() - timeout > 10
+   until not autoRunning or (hrp.Position - dest).Magnitude <= 1 or tick() - timeout > 10
 end
 
 -- ========== CHU TRÌNH ĂN TRỘM ==========
