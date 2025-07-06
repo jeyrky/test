@@ -160,14 +160,20 @@ local function stealCycle()
          moveToPos(pet.root.Position)
          if not autoRunning then break end
 
-         -- 4. kiểm tra đứng gần rồi mới giữ E
-         if (hrp.Position - pet.root.Position).Magnitude <= 5 then
-            status.Text = "💰 Ăn trộm..."
-            task.wait(0.1)
-            pressE(holdTime)
-         else
-            status.Text = "⚠️ Lệch vị trí, bỏ qua"
-         end
+-- 4. kiểm tra đứng đúng rồi mới giữ E
+local timeout = tick()
+repeat
+   task.wait(0.05)
+until not autoRunning or (hrp.Position - pet.root.Position).Magnitude <= 1 or tick() - timeout > 3
+
+if (hrp.Position - pet.root.Position).Magnitude <= 1 then
+   status.Text = "💰 Ăn trộm..."
+   task.wait(0.1)
+   pressE(holdTime)
+else
+   status.Text = "⚠️ Đứng sai vị trí, bỏ qua"
+end
+
       else
          status.Text = "😴 Không thấy pet"
       end
