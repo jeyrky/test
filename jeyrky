@@ -1,14 +1,14 @@
 --================= TUỲ CHỈNH NHANH =================
-local allowedKeywords = { "Rare", "Common", "Epic", "Brainrot God", "Legendary", "Mythic" , "Secret"  }
+local allowedKeywords = { "Rare", "Common", "Epic", "Brainrot God", "Legendary", "Mythic", "Secret" }
 local blacklistNames  = {
     ["Cocofanto Elefanto"] = true,
     ["Girafa Celestre"]    = true,
     ["Gattatino Nyanino"]  = true
 }
 
-local holdTime       = 3     -- giữ phím E bao lâu
-local restTime       = 0     -- nghỉ giữa các lần (giờ không cần)
-local checkInterval  = 0.1   -- tần suất vòng lặp chính
+local holdTime  = 3      -- giữ phím E bao lâu
+local restTime  = 0      -- nghỉ giữa các lần (hiện chưa dùng)
+local checkInterval = 0.1
 --===================================================
 
 local Lighting       = game:GetService("Lighting")
@@ -23,83 +23,78 @@ local humanoid       = char:WaitForChild("Humanoid")
 
 -- ❌ Giảm hiệu ứng & FPS
 pcall(function() game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All,false) end)
-Lighting.GlobalShadows = false; Lighting.FogEnd = 1e6; Lighting.Brightness = 0
+Lighting.GlobalShadows, Lighting.FogEnd, Lighting.Brightness = false, 1e6, 0
 if workspace:FindFirstChildOfClass("Terrain") then
    local T = workspace:FindFirstChildOfClass("Terrain")
-   T.WaterWaveSize,T.WaterWaveSpeed,T.WaterReflectance,T.WaterTransparency = 0,0,0,1
+   T.WaterWaveSize, T.WaterWaveSpeed, T.WaterReflectance, T.WaterTransparency = 0, 0, 0, 1
 end
 local function stripEffects(obj)
    for _,v in pairs(obj:GetDescendants()) do
-      if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then v.Enabled=false
-      elseif v:IsA("PointLight")or v:IsA("SpotLight")or v:IsA("SurfaceLight")then v.Enabled=false
-      elseif v:IsA("Decal") then v.Transparency=1
+      if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then v.Enabled = false
+      elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then v.Enabled = false
+      elseif v:IsA("Decal") then v.Transparency = 1
       elseif v:IsA("Texture") then v:Destroy() end
    end
 end
 stripEffects(workspace)
-workspace.DescendantAdded:Connect(function(o) task.wait(.1) pcall(function() stripEffects(o) end) end)
+workspace.DescendantAdded:Connect(function(o) task.wait(.1) pcall(stripEffects, o) end)
 pcall(function() UserSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1 end)
 
 -- 📌 Lưu 6 điểm (1-4 vùng, 5 nhà mình, 6 cửa địch)
-local points = {}
-local autoRunning = false
-local lastPet     = nil
+local points, autoRunning = {}, false
 
 -- ========== UI ==========
 local gui = Instance.new("ScreenGui", game.CoreGui)
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0,220,0,330)
-frame.Position = UDim2.new(0.02,0,0.38,0)
+frame.Size, frame.Position = UDim2.new(0,220,0,330), UDim2.new(0.02,0,0.38,0)
 frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-frame.Draggable=true; frame.Active=true
+frame.Active, frame.Draggable = true, true
 
-local function makeBtn(txt,y)
-   local b=Instance.new("TextButton",frame)
-   b.Size=UDim2.new(1,-10,0,40); b.Position=UDim2.new(0,5,0,y)
-   b.Text=txt; b.TextSize=18; b.Font=Enum.Font.SourceSansBold
-   b.BackgroundColor3=Color3.fromRGB(60,60,60); b.TextColor3=Color3.new(1,1,1)
+local function makeBtn(text, y)
+   local b = Instance.new("TextButton", frame)
+   b.Size, b.Position = UDim2.new(1,-10,0,40), UDim2.new(0,5,0,y)
+   b.Text, b.TextSize, b.Font = text, 18, Enum.Font.SourceSansBold
+   b.BackgroundColor3, b.TextColor3 = Color3.fromRGB(60,60,60), Color3.new(1,1,1)
    return b
 end
 
-local btnP1   = makeBtn("Lưu góc 1",       5)
-local btnP2   = makeBtn("Lưu góc 2",       50)
-local btnP3   = makeBtn("Lưu góc 3",       95)
-local btnP4   = makeBtn("Lưu góc 4",       140)
-local btnP5   = makeBtn("Lưu nhà mình",    185)
-local btnP6   = makeBtn("Lưu cửa địch",    230)
-local btnRun  = makeBtn("🚀 Bắt Đầu",      275)
+local btnP1 = makeBtn("Lưu góc 1", 5)
+local btnP2 = makeBtn("Lưu góc 2", 50)
+local btnP3 = makeBtn("Lưu góc 3", 95)
+local btnP4 = makeBtn("Lưu góc 4", 140)
+local btnP5 = makeBtn("Lưu nhà mình", 185)
+local btnP6 = makeBtn("Lưu cửa địch", 230)
+local btnRun = makeBtn("🚀 Bắt Đầu", 275)
 
-local status = Instance.new("TextLabel",frame)
-status.Size=UDim2.new(1,0,0,25); status.Position=UDim2.new(0,0,0,320)
-status.BackgroundTransparency=1; status.Text="Chưa chạy"; status.TextColor3=Color3.new(1,1,0)
-status.TextScaled=true
+local status = Instance.new("TextLabel", frame)
+status.Size, status.Position = UDim2.new(1,0,0,25), UDim2.new(0,0,0,320)
+status.BackgroundTransparency, status.TextColor3 = 1, Color3.new(1,1,0)
+status.TextScaled, status.Text = true, "Chưa chạy"
 
-local function setSaved(btn,txt)
-   btn.Text = "✅ "..txt
-   btn.BackgroundColor3 = Color3.fromRGB(0,170,0)
+local function setSaved(btn, label)
+   btn.Text, btn.BackgroundColor3 = "✅ " .. label, Color3.fromRGB(0,170,0)
 end
-
-btnP1.MouseButton1Click:Connect(function() points[1]=hrp.Position; status.Text="✅ Đã lưu góc 1";  setSaved(btnP1,"Góc 1")  end)
-btnP2.MouseButton1Click:Connect(function() points[2]=hrp.Position; status.Text="✅ Đã lưu góc 2";  setSaved(btnP2,"Góc 2")  end)
-btnP3.MouseButton1Click:Connect(function() points[3]=hrp.Position; status.Text="✅ Đã lưu góc 3";  setSaved(btnP3,"Góc 3")  end)
-btnP4.MouseButton1Click:Connect(function() points[4]=hrp.Position; status.Text="✅ Đã lưu góc 4";  setSaved(btnP4,"Góc 4")  end)
-btnP5.MouseButton1Click:Connect(function() points[5]=hrp.Position; status.Text="✅ Đã lưu nhà";    setSaved(btnP5,"Nhà")   end)
-btnP6.MouseButton1Click:Connect(function() points[6]=hrp.Position; status.Text="✅ Đã lưu cửa địch";setSaved(btnP6,"Cửa địch") end)
+btnP1.MouseButton1Click:Connect(function() points[1] = hrp.Position setSaved(btnP1,"Góc 1")  status.Text="✅ Đã lưu góc 1" end)
+btnP2.MouseButton1Click:Connect(function() points[2] = hrp.Position setSaved(btnP2,"Góc 2")  status.Text="✅ Đã lưu góc 2" end)
+btnP3.MouseButton1Click:Connect(function() points[3] = hrp.Position setSaved(btnP3,"Góc 3")  status.Text="✅ Đã lưu góc 3" end)
+btnP4.MouseButton1Click:Connect(function() points[4] = hrp.Position setSaved(btnP4,"Góc 4")  status.Text="✅ Đã lưu góc 4" end)
+btnP5.MouseButton1Click:Connect(function() points[5] = hrp.Position setSaved(btnP5,"Nhà")    status.Text="✅ Đã lưu nhà"   end)
+btnP6.MouseButton1Click:Connect(function() points[6] = hrp.Position setSaved(btnP6,"Cửa địch") status.Text="✅ Đã lưu cửa địch" end)
 
 -- ========== HÀM PHỤ ==========
 local function isInsideQuad(pos)
    if not (points[1] and points[2] and points[3] and points[4]) then return false end
    local function sign(p1,p2,p3) return (p1.X-p3.X)*(p2.Z-p3.Z)-(p2.X-p3.X)*(p1.Z-p3.Z) end
-   local b1=sign(pos,points[1],points[2])<0
-   local b2=sign(pos,points[2],points[3])<0
-   local b3=sign(pos,points[3],points[4])<0
-   local b4=sign(pos,points[4],points[1])<0
-   return (b1==b2) and (b2==b3) and (b3==b4)
+   local b1 = sign(pos, points[1], points[2]) < 0
+   local b2 = sign(pos, points[2], points[3]) < 0
+   local b3 = sign(pos, points[3], points[4]) < 0
+   local b4 = sign(pos, points[4], points[1]) < 0
+   return (b1 == b2) and (b2 == b3) and (b3 == b4)
 end
 
 local function isAllowedPet(name)
    if blacklistNames[name] then return false end
-   for _,w in ipairs(allowedKeywords) do
+   for _, w in ipairs(allowedKeywords) do
       if name:lower():find(w:lower()) then return true end
    end
    return false
@@ -114,7 +109,7 @@ local function findClosestPet(retry)
          local name = lbl.Text
          if isAllowedPet(name) then
             local model = lbl:FindFirstAncestorOfClass("Model")
-            local root = model and model:FindFirstChildWhichIsA("BasePart")
+            local root  = model and model:FindFirstChildWhichIsA("BasePart")
             if model and root and isInsideQuad(root.Position) then
                table.insert(validPets, {model = model, root = root})
             end
@@ -122,79 +117,78 @@ local function findClosestPet(retry)
       end
    end
 
-   -- Nếu chưa tìm thấy => retry tối đa 5 lần
    if #validPets == 0 and retry < 5 then
       task.wait(0.2)
       return findClosestPet(retry + 1)
    end
-
-   -- Chọn pet ngẫu nhiên từ danh sách hợp lệ
    if #validPets > 0 then
       return validPets[math.random(1, #validPets)]
    end
-
    return nil
 end
 
-
 local function pressE(sec)
-   VirtualInput:SendKeyEvent(true,Enum.KeyCode.E,false,game)
+   VirtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
    task.wait(sec)
-   VirtualInput:SendKeyEvent(false,Enum.KeyCode.E,false,game)
+   VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
 local function moveToPos(pos)
-   local timeout=tick()
-   while autoRunning and (hrp.Position-pos).Magnitude>4 and tick()-timeout<15 do
-      humanoid:MoveTo(Vector3.new(pos.X,hrp.Position.Y,pos.Z))
-      task.wait(0.1)
-   end
+   local dest = Vector3.new(pos.X, hrp.Position.Y, pos.Z)
+   humanoid:MoveTo(dest)
+   local timeout = tick()
+   repeat
+      task.wait(0.05)
+   until not autoRunning or (hrp.Position - dest).Magnitude <= 3 or tick() - timeout > 10
 end
 
 -- ========== CHU TRÌNH ĂN TRỘM ==========
 local function stealCycle()
    while autoRunning do
-      -- Bước 1: tới cửa địch
-      status.Text="🏃 Đến cửa địch"
+      -- 1. tới cửa địch
+      status.Text = "🏃 Đến cửa địch"
       moveToPos(points[6])
       if not autoRunning then break end
 
-      -- Bước 2: quét pet
-      status.Text="🔎 Quét pet"
-      local pet=findClosestPet()
+      -- 2. quét pet
+      status.Text = "🔎 Quét pet"
+      local pet = findClosestPet()
       if pet then
-         status.Text="🎯 Pet: "..pet.model.Name
+         status.Text = "🎯 Pet: " .. pet.model.Name
 
-         -- Bước 3: chạy tới pet
+         -- 3. chạy tới pet
          moveToPos(pet.root.Position)
          if not autoRunning then break end
 
-         -- Bước 4: giữ E 1 lần
-         status.Text="💰 Ăn trộm..."
-         task.wait(0.5)
-         pressE(holdTime)
+         -- 4. kiểm tra đứng gần rồi mới giữ E
+         if (hrp.Position - pet.root.Position).Magnitude <= 5 then
+            status.Text = "💰 Ăn trộm..."
+            task.wait(0.1)
+            pressE(holdTime)
+         else
+            status.Text = "⚠️ Lệch vị trí, bỏ qua"
+         end
       else
          status.Text = "😴 Không thấy pet"
       end
       if not autoRunning then break end
 
-      -- Bước 5: về cửa địch
-      status.Text="↩️ Về cửa địch"
+      -- 5. quay lại cửa địch
+      status.Text = "↩️ Về cửa địch"
       moveToPos(points[6])
       if not autoRunning then break end
 
-      -- Bước 6: về nhà
-      status.Text="🏡 Về nhà"
+      -- 6. về nhà
+      status.Text = "🏡 Về nhà"
       moveToPos(points[5])
    end
 end
 
--- ========== NÚt Bắt Đầu ==========
+-- ========== NÚT BẮT ĐẦU ==========
 btnRun.MouseButton1Click:Connect(function()
-   for i=1,6 do
+   for i = 1, 6 do
       if not points[i] then
-         status.Text="⚠️ Thiếu vị trí "..i
-         status.TextColor3=Color3.fromRGB(255,0,0)
+         status.Text, status.TextColor3 = "⚠️ Thiếu vị trí " .. i, Color3.fromRGB(255,0,0)
          return
       end
    end
