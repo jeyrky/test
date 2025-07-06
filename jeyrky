@@ -157,6 +157,7 @@ local function stealCycle()
 
          -- Bước 4: giữ E 1 lần
          status.Text="💰 Ăn trộm..."
+         task.wait(0.5)
          pressE(holdTime)
       else
          status.Text = "😴 Không thấy pet"
