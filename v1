@@ -94,26 +94,24 @@ local startPos    = Vector3.new(-410.32, -6.50, 255.72)
 local endPos      = Vector3.new(-411.93, -6.50, -137.21)
 local autoRunning = true
 
+-- Hàm kiểm tra có phép hay không
 local function isAllowedPet(fullText)
     -- Tách từng tên pet ra nếu có nhiều tên gộp
     for name in string.gmatch(fullText, "[^,\"\n]+") do
         name = name:match("^%s*(.-)%s*$") -- trim khoảng trắng
-        -- Nếu pet trong blacklist, bỏ qua toàn bộ
+        -- Nếu pet trong blacklist thì bỏ qua
         if blacklistNames[name] then
             return false
         end
     end
-
-    -- Nếu có keyword hợp lệ thì cho phép
+    -- Kiểm tra keywords
     for _, word in ipairs(allowedKeywords) do
         if string.lower(fullText):find(string.lower(word)) then
             return true
         end
     end
-
     return false
 end
-
 
 local function isInZone(pos)
     if not startPos or not endPos then return false end
@@ -133,8 +131,8 @@ local function findClosestPet()
                 if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
                     local dist = (hrp.Position - root.Position).Magnitude
                     if dist < nearestDist then
-                        nearest      = { model = model, root = root }
-                        nearestDist  = dist
+                        nearest = { model = model, root = root }
+                        nearestDist = dist
                     end
                 end
             end
@@ -149,26 +147,8 @@ local function pressE(seconds)
     VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
-local function isAllowedPet(fullText)
-    -- Tách từng tên pet ra
-    for name in string.gmatch(fullText, "[^,\"\n]+") do
-        name = name:match("^%s*(.-)%s*$") -- trim khoảng trắng
-        -- Nếu tên pet nằm trong blacklist, bỏ qua
-        if blacklistNames[name] then
-            return false
-        end
-    end
-
-    -- Kiểm tra keywords
-    for _, word in ipairs(allowedKeywords) do
-        if string.lower(fullText):find(string.lower(word)) then
-            return true
-        end
-    end
-
-    return false
-end
-
+-- Hàm xử lý giữ E và tới gần pet
+local function holdEOnPet(pet)
     -- Tiến lại gần pet (tối đa 5 giây)
     local t0 = tick()
     while tick() - t0 < 5 do
@@ -179,7 +159,7 @@ end
         task.wait(0.1)
     end
 
-    -- Giữ khoảng cách và spam E
+    -- Bám theo pet
     local followConn
     followConn = RunService.RenderStepped:Connect(function()
         if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
@@ -194,6 +174,7 @@ end
         end
     end)
 
+    -- Spam E liên tục
     while pet.model:IsDescendantOf(workspace) and isInZone(pet.root.Position) do
         pressE(holdTime)
         task.wait(restTime)
@@ -202,7 +183,7 @@ end
     if followConn then followConn:Disconnect() end
 end
 
--- Vòng tìm PET tự động
+-- Vòng tự động tìm và ăn pet
 task.spawn(function()
     while true do
         task.wait(checkInterval)
@@ -221,13 +202,13 @@ end)
 -- 🚶 Auto đi qua lại giữa 2 điểm
 local function autoWalkBetweenPoints()
     local function moveTo(pos)
-        local stepSize   = 20
+        local stepSize = 20
         local currentPos = hrp.Position
 
         while (currentPos - pos).Magnitude > 3 do
             if not autoRunning then break end
 
-            local dir     = (pos - currentPos).Unit
+            local dir = (pos - currentPos).Unit
             local nextPos = currentPos + dir * math.min(stepSize, (pos - currentPos).Magnitude)
 
             humanoid:MoveTo(Vector3.new(nextPos.X, hrp.Position.Y, nextPos.Z))
