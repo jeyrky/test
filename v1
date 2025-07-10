@@ -149,8 +149,25 @@ local function pressE(seconds)
     VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
-local function holdEOnPet(pet)
-    if not pet or not pet.root or not pet.model then return end
+local function isAllowedPet(fullText)
+    -- Tách từng tên pet ra
+    for name in string.gmatch(fullText, "[^,\"\n]+") do
+        name = name:match("^%s*(.-)%s*$") -- trim khoảng trắng
+        -- Nếu tên pet nằm trong blacklist, bỏ qua
+        if blacklistNames[name] then
+            return false
+        end
+    end
+
+    -- Kiểm tra keywords
+    for _, word in ipairs(allowedKeywords) do
+        if string.lower(fullText):find(string.lower(word)) then
+            return true
+        end
+    end
+
+    return false
+end
 
     -- Tiến lại gần pet (tối đa 5 giây)
     local t0 = tick()
