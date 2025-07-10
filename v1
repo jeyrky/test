@@ -87,7 +87,6 @@ local allowedKeywords = { "Brainrot God", "Secret" }
 local blacklistNames = {
     ["Cocofanto Elefanto"] = true,
     ["Girafa Celestre"] = true,
-    ["Gattatino Nyanino"] = true
 }
 
 local lastPet     = nil
@@ -95,19 +94,26 @@ local startPos    = Vector3.new(-410.32, -6.50, 255.72)
 local endPos      = Vector3.new(-411.93, -6.50, -137.21)
 local autoRunning = true
 
-local function isAllowedPet(name)
-    -- Nếu tên nằm trong blacklist thì loại
-    if blacklistNames[name] then
-        return false
+local function isAllowedPet(fullText)
+    -- Tách từng tên pet ra nếu có nhiều tên gộp
+    for name in string.gmatch(fullText, "[^,\"\n]+") do
+        name = name:match("^%s*(.-)%s*$") -- trim khoảng trắng
+        -- Nếu pet trong blacklist, bỏ qua toàn bộ
+        if blacklistNames[name] then
+            return false
+        end
     end
-    -- Nếu khớp keyword thì chấp nhận
+
+    -- Nếu có keyword hợp lệ thì cho phép
     for _, word in ipairs(allowedKeywords) do
-        if string.lower(name):find(string.lower(word)) then
+        if string.lower(fullText):find(string.lower(word)) then
             return true
         end
     end
+
     return false
 end
+
 
 local function isInZone(pos)
     if not startPos or not endPos then return false end
