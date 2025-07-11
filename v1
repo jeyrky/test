@@ -94,24 +94,31 @@ local startPos    = Vector3.new(-410.32, -6.50, 255.72)
 local endPos      = Vector3.new(-411.93, -6.50, -137.21)
 local autoRunning = true
 
--- Hàm kiểm tra có phép hay không
 local function isAllowedPet(fullText)
-    -- Tách từng tên pet ra nếu có nhiều tên gộp
-    for name in string.gmatch(fullText, "[^,\"\n]+") do
-        name = name:match("^%s*(.-)%s*$") -- trim khoảng trắng
-        -- Nếu pet trong blacklist thì bỏ qua
-        if blacklistNames[name] then
-            return false
-        end
+    -- Tách rarity và pet name từ chuỗi, ví dụ: "Brainrot God - Cocofanto Elefanto"
+    local rarity, petName = fullText:match("^(.-)%s*[-‒–—]%s*(.+)$")
+
+    -- Nếu không tách được, gán petName = fullText
+    if not rarity or not petName then
+        rarity = ""
+        petName = fullText
     end
-    -- Kiểm tra keywords
+
+    -- Loại trừ nếu pet nằm trong danh sách blacklist
+    if blacklistNames[petName] then
+        return false
+    end
+
+    -- Kiểm tra nếu độ hiếm hợp lệ
     for _, word in ipairs(allowedKeywords) do
-        if string.lower(fullText):find(string.lower(word)) then
+        if string.lower(rarity) == string.lower(word) then
             return true
         end
     end
+
     return false
 end
+
 
 local function isInZone(pos)
     if not startPos or not endPos then return false end
