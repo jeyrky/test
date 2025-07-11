@@ -1,9 +1,3 @@
--- ⛔ Danh sách PET cần bỏ qua
-local blacklistNames = {
-    ["Cocofanto Elefanto"] = true,
-    ["Girafa Celestre"] = true,
-}, trong Brainrot God. treong Brainrot God nhiều các loại pet khác nhau, nhưng 2 con này it tiền qua nên k cần: cần nhuwngh con khac Brainrot God 🔧 Tối ưu FPS + Tắt hiệu ứng Pet
-
 local Lighting     = game:GetService("Lighting")
 local Terrain      = workspace:FindFirstChildOfClass("Terrain")
 local Players      = game:GetService("Players")
