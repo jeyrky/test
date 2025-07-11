@@ -46,7 +46,6 @@ end
 
 removeEffects(workspace)
 
--- ⚙️ Auto tắt hiệu ứng khi có obj mới
 workspace.DescendantAdded:Connect(function(obj)
     task.wait(0.1)
     pcall(function()
@@ -60,12 +59,10 @@ workspace.DescendantAdded:Connect(function(obj)
     end)
 end)
 
--- ⚙️ Chất lượng thấp nhất
 pcall(function()
     UserSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
 end)
 
--- ⚙️ Khi nhân vật spawn
 lp.CharacterAdded:Connect(function(c)
     removeEffects(c)
 end)
@@ -74,42 +71,17 @@ end)
 -- 🚀 Auto ăn PET "Secret" / "Brainrot God"
 -- ===========================
 
-local holdTime       = 3        -- thời gian giữ phím E
-local restTime       = 0.7      -- nghỉ giữa các lần ăn
-local followDistance = 1        -- khoảng cách bám theo
-local checkInterval  = 5        -- tần suất quét pet (s)
+local holdTime       = 3
+local restTime       = 0.7
+local followDistance = 1
+local checkInterval  = 5
 
 local allowedKeywords = { "Brainrot God", "Secret" }
-
--- ⛔ Danh sách PET cần bỏ qua
-local blacklistNames = {
-    ["Cocofanto Elefanto"] = true,
-    ["Girafa Celestre"] = true,
-}
 
 local lastPet     = nil
 local startPos    = Vector3.new(-410.32, -6.50, 255.72)
 local endPos      = Vector3.new(-411.93, -6.50, -137.21)
 local autoRunning = true
-
--- Hàm kiểm tra có phép hay không
-local function isAllowedPet(fullText)
-    -- Tách từng tên pet ra nếu có nhiều tên gộp
-    for name in string.gmatch(fullText, "[^,\"\n]+") do
-        name = name:match("^%s*(.-)%s*$") -- trim khoảng trắng
-        -- Nếu pet trong blacklist thì bỏ qua
-        if blacklistNames[name] then
-            return false
-        end
-    end
-    -- Kiểm tra keywords
-    for _, word in ipairs(allowedKeywords) do
-        if string.lower(fullText):find(string.lower(word)) then
-            return true
-        end
-    end
-    return false
-end
 
 local function isInZone(pos)
     if not startPos or not endPos then return false end
@@ -123,15 +95,18 @@ local function findClosestPet()
     for _, label in ipairs(workspace:GetDescendants()) do
         if label:IsA("TextLabel") then
             local name = label.Text
-            if isAllowedPet(name) then
-                local model = label:FindFirstAncestorOfClass("Model")
-                local root  = model and model:FindFirstChildWhichIsA("BasePart")
-                if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
-                    local dist = (hrp.Position - root.Position).Magnitude
-                    if dist < nearestDist then
-                        nearest = { model = model, root = root }
-                        nearestDist = dist
+            for _, word in ipairs(allowedKeywords) do
+                if string.lower(name):find(string.lower(word)) then
+                    local model = label:FindFirstAncestorOfClass("Model")
+                    local root  = model and model:FindFirstChildWhichIsA("BasePart")
+                    if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
+                        local dist = (hrp.Position - root.Position).Magnitude
+                        if dist < nearestDist then
+                            nearest = { model = model, root = root }
+                            nearestDist = dist
+                        end
                     end
+                    break
                 end
             end
         end
@@ -145,9 +120,7 @@ local function pressE(seconds)
     VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 
--- Hàm xử lý giữ E và tới gần pet
 local function holdEOnPet(pet)
-    -- Tiến lại gần pet (tối đa 5 giây)
     local t0 = tick()
     while tick() - t0 < 5 do
         if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then return end
@@ -157,7 +130,6 @@ local function holdEOnPet(pet)
         task.wait(0.1)
     end
 
-    -- Bám theo pet
     local followConn
     followConn = RunService.RenderStepped:Connect(function()
         if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
@@ -172,7 +144,6 @@ local function holdEOnPet(pet)
         end
     end)
 
-    -- Spam E liên tục
     while pet.model:IsDescendantOf(workspace) and isInZone(pet.root.Position) do
         pressE(holdTime)
         task.wait(restTime)
@@ -181,7 +152,6 @@ local function holdEOnPet(pet)
     if followConn then followConn:Disconnect() end
 end
 
--- Vòng tự động tìm và ăn pet
 task.spawn(function()
     while true do
         task.wait(checkInterval)
@@ -197,7 +167,6 @@ task.spawn(function()
     end
 end)
 
--- 🚶 Auto đi qua lại giữa 2 điểm
 local function autoWalkBetweenPoints()
     local function moveTo(pos)
         local stepSize = 20
@@ -236,27 +205,21 @@ end
 
 autoWalkBetweenPoints()
 
--- Thêm phần tự động nhảy và xem phim
 local function autoJumpAndPlay()
     while true do
-        -- Nhảy sau mỗi 30 giây
         task.wait(30)
         VirtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
         task.wait(0.1)
         VirtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
 
-        -- Chờ 15 giây sau khi nhảy để không bị chồng chéo
         task.wait(15)
 
-        -- Nhấn phím 1 sau 45 giây
         VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
         task.wait(0.1)
         VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
 
-        -- Đợi 45 giây nữa trước lần tiếp theo
         task.wait(45)
     end
 end
 
--- Gọi hàm này để bắt đầu vòng lặp
 task.spawn(autoJumpAndPlay)
