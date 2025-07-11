@@ -1,4 +1,8 @@
--- 🔧 Tối ưu FPS + Tắt hiệu ứng Pet
+-- ⛔ Danh sách PET cần bỏ qua
+local blacklistNames = {
+    ["Cocofanto Elefanto"] = true,
+    ["Girafa Celestre"] = true,
+}, trong Brainrot God. treong Brainrot God nhiều các loại pet khác nhau, nhưng 2 con này it tiền qua nên k cần: cần nhuwngh con khac Brainrot God 🔧 Tối ưu FPS + Tắt hiệu ứng Pet
 
 local Lighting     = game:GetService("Lighting")
 local Terrain      = workspace:FindFirstChildOfClass("Terrain")
@@ -94,31 +98,24 @@ local startPos    = Vector3.new(-410.32, -6.50, 255.72)
 local endPos      = Vector3.new(-411.93, -6.50, -137.21)
 local autoRunning = true
 
+-- Hàm kiểm tra có phép hay không
 local function isAllowedPet(fullText)
-    -- Tách rarity và pet name từ chuỗi, ví dụ: "Brainrot God - Cocofanto Elefanto"
-    local rarity, petName = fullText:match("^(.-)%s*[-‒–—]%s*(.+)$")
-
-    -- Nếu không tách được, gán petName = fullText
-    if not rarity or not petName then
-        rarity = ""
-        petName = fullText
+    -- Tách từng tên pet ra nếu có nhiều tên gộp
+    for name in string.gmatch(fullText, "[^,\"\n]+") do
+        name = name:match("^%s*(.-)%s*$") -- trim khoảng trắng
+        -- Nếu pet trong blacklist thì bỏ qua
+        if blacklistNames[name] then
+            return false
+        end
     end
-
-    -- Loại trừ nếu pet nằm trong danh sách blacklist
-    if blacklistNames[petName] then
-        return false
-    end
-
-    -- Kiểm tra nếu độ hiếm hợp lệ
+    -- Kiểm tra keywords
     for _, word in ipairs(allowedKeywords) do
-        if string.lower(rarity) == string.lower(word) then
+        if string.lower(fullText):find(string.lower(word)) then
             return true
         end
     end
-
     return false
 end
-
 
 local function isInZone(pos)
     if not startPos or not endPos then return false end
