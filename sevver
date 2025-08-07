@@ -1,167 +1,172 @@
---==================== CONFIG ====================
-local PLACE_ID       = 126884695634066
-local TARGET_VERSION = 1681
-local PLAYER_MAX     = 1         -- chỉ chọn server có số người <= giá trị này
-local MAX_PAGES      = 25        -- mỗi trang ~100 server
-local CHECK_DELAY    = 2         -- chờ UI/game load sau teleport (giây)
+-- ===== CONFIG =====
+local PLACE_ID        = 126884695634066
+local TARGET_VERSION  = 1681          -- muốn tìm v1681
+local PLAYER_MAX      = 1            -- chỉ vào server có số người <= giá trị này
+local MAX_PAGES       = 25            -- số trang tối đa cần quét (mỗi trang ~100 sv)
+local CHECK_DELAY     = 2             -- chờ UI load sau khi vào server (giây)
 
--- URL chứa CHÍNH SCRIPT NÀY để tự reload sau teleport
-local RELOAD_URL     = "https://raw.githubusercontent.com/your/repo/main/find_v1681.lua"
---================================================
-
+-- ===== SERVICES =====
 local TS = game:GetService("TeleportService")
 local HS = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 
--- compat queue_on_teleport
-local function get_queue()
-    return queue_on_teleport
-        or (syn and syn.queue_on_teleport)
-        or (fluxus and fluxus.queue_on_teleport)
-        or (KRNL_LOADED and queue_on_teleport)
-end
-
-local function queue_self()
-    local q = get_queue()
-    if q then
-        q(('loadstring(game:HttpGet("%s", true))()'):format(RELOAD_URL))
-    end
-end
-
---==================== UI nhỏ gọn ====================
+-- ===== UI nhỏ gọn =====
 local function ui()
     local sg = Instance.new("ScreenGui")
-    sg.Name = "FindOldLowPop"; sg.IgnoreGuiInset = true; sg.ResetOnSpawn = false
+    sg.Name = "FindOldLowPop"
+    sg.IgnoreGuiInset = true
+    sg.ResetOnSpawn = false
     sg.Parent = LP:WaitForChild("PlayerGui")
 
     local f = Instance.new("Frame", sg)
-    f.BackgroundColor3 = Color3.fromRGB(30,30,30); f.BackgroundTransparency = 0.15
-    f.BorderSizePixel = 0; f.Position = UDim2.fromScale(.72,.06); f.Size = UDim2.fromOffset(360,120)
+    f.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    f.BackgroundTransparency = 0.15
+    f.BorderSizePixel = 0
+    f.Position = UDim2.fromScale(.75,.06)
+    f.Size = UDim2.fromOffset(340,130)
     f.Active = true; f.Draggable = true
-    local s = Instance.new("UIStroke", f); s.Color = Color3.fromRGB(90,90,90)
+    Instance.new("UIStroke", f).Color = Color3.fromRGB(90,90,90)
     local pad = Instance.new("UIPadding", f)
-    pad.PaddingTop, pad.PaddingBottom, pad.PaddingLeft, pad.PaddingRight = UDim.new(0,10), UDim.new(0,10), UDim.new(0,12), UDim.new(0,12)
+    pad.PaddingTop, pad.PaddingBottom = UDim.new(0,10), UDim.new(0,10)
+    pad.PaddingLeft, pad.PaddingRight = UDim.new(0,12), UDim.new(0,12)
 
     local title = Instance.new("TextLabel", f)
-    title.BackgroundTransparency = 1; title.Font = Enum.Font.GothamBold; title.TextSize = 18
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
     title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Text = ("Tìm v%d (ưu tiên server ≤ %d người)"):format(TARGET_VERSION, PLAYER_MAX)
-    title.TextColor3 = Color3.new(1,1,1); title.Size = UDim2.new(1,0,0,22)
+    title.Text = ("Tìm v%d (ưu tiên server ít người)"):format(TARGET_VERSION)
+    title.TextColor3 = Color3.new(1,1,1)
+    title.Size = UDim2.new(1,0,0,22)
 
-    local info = Instance.new("TextLabel", f); info.Name = "Info"
-    info.Position = UDim2.fromOffset(0,28); info.Size = UDim2.new(1,0,0,20)
-    info.BackgroundTransparency = 1; info.Font = Enum.Font.Gotham; info.TextSize = 14
-    info.TextXAlignment = Enum.TextXAlignment.Left; info.TextColor3 = Color3.fromRGB(220,220,220)
+    local info = Instance.new("TextLabel", f); info.Name="Info"
+    info.Position = UDim2.fromOffset(0,26)
+    info.Size = UDim2.new(1,0,0,20)
+    info.BackgroundTransparency=1; info.Font=Enum.Font.Gotham; info.TextSize=14
+    info.TextXAlignment=Enum.TextXAlignment.Left; info.TextColor3=Color3.fromRGB(220,220,220)
 
-    local st = Instance.new("TextLabel", f); st.Name = "St"
-    st.Position = UDim2.fromOffset(0,52); st.Size = UDim2.new(1,0,0,20)
-    st.BackgroundTransparency = 1; st.Font = Enum.Font.Gotham; st.TextSize = 14
-    st.TextXAlignment = Enum.TextXAlignment.Left; st.TextColor3 = Color3.fromRGB(200,255,200)
+    local st = Instance.new("TextLabel", f); st.Name="St"
+    st.Position = UDim2.fromOffset(0,48)
+    st.Size = UDim2.new(1,0,0,22)
+    st.BackgroundTransparency=1; st.Font=Enum.Font.GothamMedium; st.TextSize=16
+    st.TextXAlignment=Enum.TextXAlignment.Left; st.TextColor3=Color3.fromRGB(255,220,150)
 
-    local tip = Instance.new("TextLabel", f)
-    tip.Position = UDim2.fromOffset(0,76); tip.Size = UDim2.new(1,0,0,20)
-    tip.BackgroundTransparency = 1; tip.Font = Enum.Font.Gotham; tip.TextSize = 13
-    tip.TextXAlignment = Enum.TextXAlignment.Left; tip.TextColor3 = Color3.fromRGB(200,200,200)
-    tip.Text = "Tự động teleport & tự chạy lại sau khi vào server."
+    local job = Instance.new("TextLabel", f); job.Name="Job"
+    job.Position = UDim2.fromOffset(0,74)
+    job.Size = UDim2.new(1,0,0,20)
+    job.BackgroundTransparency=1; job.Font=Enum.Font.Gotham; job.TextSize=14
+    job.TextXAlignment=Enum.TextXAlignment.Left; job.TextColor3=Color3.fromRGB(200,255,200)
+    job.Text = "JobId: "..(game.JobId or "N/A")
 
-    return function(a,b) -- setter
-        if a then info.Text = a end
-        if b then st.Text = b end
+    local copy = Instance.new("TextButton", f)
+    copy.Text="Copy JobId"; copy.Font=Enum.Font.GothamBold; copy.TextSize=14
+    copy.TextColor3=Color3.new(1,1,1); copy.BackgroundColor3=Color3.fromRGB(60,140,60)
+    copy.Position = UDim2.fromOffset(200, 92); copy.Size = UDim2.fromOffset(120,28)
+    copy.MouseButton1Click:Connect(function()
+        if setclipboard then setclipboard(game.JobId or "") copy.Text="Đã copy!" task.delay(1.2,function() copy.Text="Copy JobId" end) end
+    end)
+
+    return sg, info, st, job
+end
+local SG, LINFO, LST, LJOB = ui()
+
+-- ===== đọc label vXXXX ở góc trái =====
+local function readTopLeftV()
+    local pg = LP:FindFirstChild("PlayerGui"); if not pg then return nil,nil end
+    local bestScore, bestText, bestNum
+    for _,d in ipairs(pg:GetDescendants()) do
+        if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+            local tx = tostring(d.Text or "")
+            local n = tx:match("[vV](%d+)")
+            if n then
+                local ok,pos = pcall(function() return d.AbsolutePosition end)
+                if ok then
+                    local s = pos.X + pos.Y -- càng nhỏ càng gần góc trái
+                    if not bestScore or s < bestScore then
+                        bestScore, bestText, bestNum = s, tx, tonumber(n)
+                    end
+                end
+            end
+        end
     end
+    return bestText, bestNum
 end
 
-local setText = ui()
-
---==================== Helper: fetch servers ====================
-local function fetch_servers(placeId, cursor)
+-- ===== tải trang server, lọc server ít người =====
+local function fetchLowPop(cursor)
     local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100%s")
-        :format(placeId, cursor and ("&cursor="..HS:UrlEncode(cursor)) or "")
-    local ok, res = pcall(function() return HS:GetAsync(url) end)
-    if not ok then return nil end
-    local data = HS:JSONDecode(res)
-    return data
+        :format(PLACE_ID, cursor and ("&cursor="..cursor) or "")
+    local ok, body = pcall(function() return game:HttpGet(url) end)
+    if not ok then return {data={}}, nil end
+    local j = HS:JSONDecode(body)
+
+    -- lấy server có playing <= PLAYER_MAX
+    local bucket = {}
+    for _,sv in ipairs(j.data or {}) do
+        if typeof(sv.playing) == "number" and sv.playing <= PLAYER_MAX then
+            table.insert(bucket, {id = sv.id, playing = sv.playing})
+        end
+    end
+    -- sắp xếp tăng dần theo số người (ưu tiên 0/1 người)
+    table.sort(bucket, function(a,b)
+        if a.playing == b.playing then
+            return a.id < b.id
+        end
+        return a.playing < b.playing
+    end)
+
+    return {data=bucket}, j.nextPageCursor
 end
 
---==================== Search & Teleport ====================
-local function find_and_tp()
-    -- nếu đã ở đúng version thì thôi
-    if game.PlaceVersion == TARGET_VERSION then
-        setText(("Đang ở v%d ✓"):format(game.PlaceVersion), "ĐÃ VÀO V"..TARGET_VERSION.." — không cần teleport.")
-        return true
+-- ===== state qua TeleportData để tiếp tục sau mỗi hop =====
+local TD = TS:GetLocalPlayerTeleportData() or {}
+local cursor = TD.cursor
+local page  = TD.page or 0
+local idx   = TD.idx  or 1
+local list  = TD.list or {}
+
+task.spawn(function()
+    -- check server hiện tại trước
+    task.wait(CHECK_DELAY)
+    local txt,num = readTopLeftV()
+    LINFO.Text = txt and ("Thấy: "..txt.." (num="..num..")") or "Chưa thấy vXXXX"
+    LJOB.Text = "JobId: "..(game.JobId or "N/A")
+    if num == TARGET_VERSION then
+        LST.Text = ("✅ FOUND v%d — bấm Copy JobId"):format(TARGET_VERSION)
+        LST.TextColor3 = Color3.fromRGB(140,255,140)
+        return
     end
 
-    local cursor = nil
-    for page=1, MAX_PAGES do
-        setText(("Đang quét trang %d/%d..."):format(page, MAX_PAGES))
-        local data = fetch_servers(PLACE_ID, cursor)
-        if not data or not data.data then break end
+    LST.Text = ("⏳ Không đúng v%d → tìm server ít người..."):format(TARGET_VERSION)
+    LST.TextColor3 = Color3.fromRGB(255,200,160)
 
-        -- 1) Ưu tiên server người ≤ PLAYER_MAX
-        local candidate = nil
-        local smallest = nil
-
-        for _,srv in ipairs(data.data) do
-            local playing = tonumber(srv.playing) or 0
-            -- một số API có field placeVersion; nếu có và khớp thì ưu tiên tuyệt đối
-            if srv.placeVersion and tonumber(srv.placeVersion) == TARGET_VERSION then
-                if playing <= PLAYER_MAX then
-                    candidate = srv
-                    break
-                end
-                smallest = (not smallest or playing < (tonumber(smallest.playing) or 1e9)) and srv or smallest
-            else
-                if playing <= PLAYER_MAX and not candidate then
-                    candidate = srv
-                end
-                smallest = (not smallest or playing < (tonumber(smallest.playing) or 1e9)) and srv or smallest
+    local pagesTried = 0
+    while true do
+        if idx > #list then
+            if pagesTried >= MAX_PAGES then
+                LST.Text = ("Hết giới hạn %d trang."):format(MAX_PAGES)
+                return
+            end
+            local pack, nextCursor = fetchLowPop(cursor)
+            cursor = nextCursor; page += 1; pagesTried += 1
+            list, idx = {}, 1
+            for _,sv in ipairs(pack.data or {}) do
+                if sv.id ~= game.JobId then table.insert(list, sv.id) end
+            end
+            if #list == 0 and not cursor then
+                LST.Text = "Không còn server ít người để thử."
+                return
             end
         end
 
-        local pick = candidate or smallest
-        if pick and pick.id then
-            setText(nil, ("Teleport tới sv %s (đang có %d người)..."):format(pick.id, pick.playing or 0))
-            queue_self()
-            task.wait(0.25)
-            TS:TeleportToPlaceInstance(PLACE_ID, pick.id, LP)
-            return false
+        local targetJob = list[idx]; idx += 1
+        if targetJob and targetJob ~= game.JobId then
+            LST.Text = ("Teleport → server ít người (候)"):gsub("候","…")
+            local nextTD = {cursor = cursor, page = page, idx = idx, list = list}
+            TS:TeleportToPlaceInstance(PLACE_ID, targetJob, LP, nextTD)
+            break
         end
-
-        cursor = data.nextPageCursor
-        if not cursor then break end
-        task.wait(0.15)
-    end
-
-    -- nếu không tìm được server → fallback: Teleport về public ngẫu nhiên
-    setText(nil, "Không tìm thấy server phù hợp. Teleport public ngẫu nhiên…")
-    queue_self()
-    TS:Teleport(PLACE_ID, LP)
-    return false
-end
-
---==================== After Teleport check ====================
-local function post_check()
-    task.delay(CHECK_DELAY, function()
-        if game.PlaceVersion == TARGET_VERSION then
-            setText(("Đang ở v%d ✓"):format(game.PlaceVersion), "THÀNH CÔNG: Đúng v"..TARGET_VERSION)
-        else
-            setText(("Đang ở v%d ✗"):format(game.PlaceVersion), "Sai version → tìm tiếp…")
-            find_and_tp()
-        end
-    end)
-end
-
--- auto re-run after teleport
-LP.OnTeleport:Connect(function(state)
-    if state == Enum.TeleportState.Started then
-        queue_self()
+        task.wait(0.05)
     end
 end)
-
---==================== Kickoff ====================
-post_check()
-if game.PlaceVersion ~= TARGET_VERSION then
-    find_and_tp()
-else
-    setText(("Đang ở v%d ✓"):format(game.PlaceVersion), "ĐÃ VÀO V"..TARGET_VERSION.." — sẵn sàng chạy script của anh.")
-end
