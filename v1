@@ -76,7 +76,7 @@ local restTime       = 0.7
 local followDistance = 1
 local checkInterval  = 5
 
-local allowedKeywords = { "Brainrot God", "Secret" }
+local allowedKeywords = { "Secret" }
 
 local lastPet     = nil
 local startPos    = Vector3.new(-410.32, -6.50, 255.72)
