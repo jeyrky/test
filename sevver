@@ -1,3 +1,4 @@
+
 --[[  GROW A GARDEN – AUTO LOOP (Recall -> Drop -> Wait 15s -> Repeat)
     • Luồng: THU → THẢ (Tri + Moon ở mốc) → HẾT GIỜ → CHỜ 15s → LẶP
     • HUD: chỉ đồng hồ Triceratops
@@ -24,13 +25,13 @@ getgenv().CFG = {
 
 -- Danh sách GUID pet cần thu lại
 local PET_GUIDS = {
-    "{2c871dfe-58d9-4a92-9993-939d2c41f0c9}",
-    "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
     "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
-    "{24eeef51-7e6a-46e6-8f01-fc23859cbfea}",
-    "{4220b635-bc02-4cb8-8e86-7959fdd1f06b}",
+    "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
     "{31ee4294-0d7c-4993-813f-2ca605226f39}",
+    "{4220b635-bc02-4cb8-8e86-7959fdd1f06b}",
+    "{2c871dfe-58d9-4a92-9993-939d2c41f0c9}",
     "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
+    "{ab1786d6-7437-426f-b2ba-e144e82c7cab}",
     "{24eeef51-7e6a-46e6-8f01-fc23859cbfea}"
 }
 
