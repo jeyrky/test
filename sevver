@@ -1,32 +1,45 @@
---[[
-UI 2 NÚT: THẢ / THU (BẢN THẢ = CẦM LÊN RỒI ĐẶT)
-- THẢ: tìm pet theo tên trong Backpack -> Equip lên nhân vật -> cố gắng "đặt" xuống vườn
-- THU : recall toàn bộ (remote nếu có, fallback đưa Tool về Backpack)
+--[[  GROW A GARDEN – DROP + TIMER (FAST DROP + CUSTOM RECALL)
+    • THẢ: Triceratops -> khi còn 1:15 tự thả Moon Cat
+    • HUD: chỉ đồng hồ Triceratops
+    • THU: recall đúng các pet GUID trong danh sách
 ]]
 
 -- ===== CẤU HÌNH =====
 getgenv().CFG = {
-    PET_KEYWORD = "Moon Cat",            -- tên/chuỗi cần khớp (bắt cả "Moon Cat (2)" ...)
-    MAX_TO_PLACE = 7,                    -- số lượng cần thả
-    BETWEEN_EACH = 0.08,                 -- delay nhỏ giữa mỗi lần thả
+    TRI_KEYWORD         = "Triceratops",
+    MOON_KEYWORD        = "Moon Cat",
 
-    -- Ưu tiên các cách "đặt" theo thứ tự:
-    TRY_ACTIVATE = true,                 -- tool:Activate()
-    TRY_FIRE_REMOTE_CHILDREN = true,     -- FireServer tất cả RemoteEvent trong tool (Place/Deploy/Activate,...)
-    TRY_CLICK_TAP = true,                -- giả lập click/tap 1 cái để đặt
+    TRI_INTERVAL_SEC    = 3*60 + 33,  -- 3:33 = 213s
+    START_MOON_AT_LEFT  = 75,         -- khi Triceratops còn 1:15
 
-    -- Remote recall (nếu game có):
-    RECALL_BANG_REMOTE = true,
-    RECALL_REMOTE_PATH = "ReplicatedStorage.Remotes.RecallAllPets",
+    MAX_MOON_TO_PLACE   = 7,          -- số Moon Cat cần thả
 
-    -- Vị trí click mặc định: ngay trước mặt nhân vật 6 studs (đủ an toàn)
+    TRY_ACTIVATE        = true,
+    TRY_FIRE_REMOTE_CHILDREN = true,
+    TRY_CLICK_TAP       = true,
+
     CLICK_FORWARD_STUDS = 6,
+}
+
+-- Danh sách GUID pet cần thu lại
+local PET_GUIDS = {
+    "{ab1786d6-7437-426f-b2ba-e144e82c7cab}",
+    "{4220b635-bc02-4cb8-8e86-7959fdd1f06b}",
+    "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
+    "{2c871dfe-58d9-4a92-9993-939d2c41f0c9}",
+    "{24eeef51-7e6a-46e6-8f01-fc23859cbfea}",
+    "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
+    "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
+    "{31ee4294-0d7c-4993-813f-2ca605226f39}",
 }
 
 -- ===== DỊCH VỤ =====
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local VIM = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local RS = game:GetService("ReplicatedStorage")
+
 local LP = Players.LocalPlayer
 local Character = LP.Character or LP.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
@@ -34,54 +47,28 @@ local HRP = Character:WaitForChild("HumanoidRootPart")
 local Backpack = LP:WaitForChild("Backpack")
 local PlayerGui = LP:WaitForChild("PlayerGui")
 
+local PetsService = RS:WaitForChild("GameEvents"):WaitForChild("PetsService")
+
 local function waitx(t) task.wait(t or 0) end
-
-local function byPath(pathStr)
-    if not pathStr or pathStr=="" then return nil end
-    local n = game
-    for seg in string.gmatch(pathStr,"[^%.]+") do
-        n = n:FindFirstChild(seg)
-        if not n then return nil end
-    end
-    return n
-end
-
-local recallRemote = nil
-if getgenv().CFG.RECALL_BANG_REMOTE then
-    recallRemote = byPath(getgenv().CFG.RECALL_REMOTE_PATH)
-end
-
--- ===== HÀM BỔ TRỢ =====
 local function nameMatch(toolName, keyword)
-    -- khớp mềm: chứa keyword (không phân biệt hoa/thường)
-    toolName = string.lower(toolName or "")
-    keyword = string.lower(keyword or "")
-    return string.find(toolName, keyword, 1, true) ~= nil
+    return string.find(string.lower(toolName or ""), string.lower(keyword or ""), 1, true) ~= nil
 end
 
 local function equipTool(tool)
-    -- đảm bảo cầm trên tay
     pcall(function() Humanoid:EquipTool(tool) end)
     tool.Parent = Character
     waitx(0.05)
 end
 
 local function toolTryActivate(tool)
-    -- 1) cố Activate
     if getgenv().CFG.TRY_ACTIVATE and tool and tool:IsA("Tool") then
         pcall(function() tool:Activate() end)
-        waitx(0.05)
     end
-    -- 2) bắn tất cả RemoteEvent con (Place/Deploy/Activate/Use...)
     if getgenv().CFG.TRY_FIRE_REMOTE_CHILDREN and tool then
         for _,child in ipairs(tool:GetDescendants()) do
             if child.ClassName == "RemoteEvent" then
-                -- gửi vị trí trước mặt để nhiều tool hiểu được
-                local targetPos = HRP.Position + HRP.CFrame.LookVector * getgenv().CFG.CLICK_FORWARD_STUDS
-                local payload = targetPos
-                -- nhiều game chỉ cần nil / true / {} – thử những biến thể an toàn
-                pcall(function() child:FireServer(payload) end)
-                waitx(0.02)
+                local pos = HRP.Position + HRP.CFrame.LookVector * getgenv().CFG.CLICK_FORWARD_STUDS
+                pcall(function() child:FireServer(pos) end)
             end
         end
     end
@@ -96,161 +83,158 @@ end
 local function tryClickTap()
     if not getgenv().CFG.TRY_CLICK_TAP then return end
     local x, y = screenCenter()
-    -- Giả lập 1 lần click/tap giữa màn hình
     pcall(function()
         if UIS.TouchEnabled and not UIS.MouseEnabled then
-            VIM:SendTouchEvent(x, y, 1, true)  -- press
-            VIM:SendTouchEvent(x, y, 1, false) -- release
+            VIM:SendTouchEvent(x, y, 1, true); VIM:SendTouchEvent(x, y, 1, false)
         else
-            VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)  -- down
-            VIM:SendMouseButtonEvent(x, y, 0, false, game, 0) -- up
+            VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
+            VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
         end
     end)
 end
 
-local function placeOne(tool)
-    if not tool or not tool:IsA("Tool") then return false end
-    equipTool(tool)
-    toolTryActivate(tool)
-    tryClickTap()
-    waitx(0.05)
-    return true
-end
-
-local function dropMoonCats()
-    local need = getgenv().CFG.MAX_TO_PLACE
-    local keyword = getgenv().CFG.PET_KEYWORD
+-- ===== SIÊU NHANH: Thả tất cả pet khớp keyword
+local function placeByKeywordFast(keyword, limitCount)
     local placed = 0
-
-    -- lượt 1: theo thứ tự ổn định của Backpack (để hạn chế double)
     for _,it in ipairs(Backpack:GetChildren()) do
-        if placed >= need then break end
         if it:IsA("Tool") and nameMatch(it.Name, keyword) then
-            if placeOne(it) then
-                placed += 1
-                waitx(getgenv().CFG.BETWEEN_EACH)
-            end
+            equipTool(it)
+            toolTryActivate(it)
+            tryClickTap()
+            placed += 1
+            if limitCount and placed >= limitCount then break end
         end
     end
-
-    -- lượt 2: nếu trong lúc đặt có item mới vừa vào Backpack (tránh sót)
-    if placed < need then
-        for _,it in ipairs(Backpack:GetChildren()) do
-            if placed >= need then break end
-            if it:IsA("Tool") and nameMatch(it.Name, keyword) then
-                if placeOne(it) then
-                    placed += 1
-                    waitx(getgenv().CFG.BETWEEN_EACH)
-                end
-            end
-        end
-    end
-
-    print(("[PetUI] ĐÃ THẢ %d/%d \"%s\""):format(placed, need, keyword))
     return placed
 end
 
-local function recallAll()
-    if recallRemote and recallRemote:IsA("RemoteEvent") then
-        pcall(function() recallRemote:FireServer() end)
-        return true
+-- ===== THU PET THEO GUID =====
+local function recallByGUIDs()
+    for _,guid in ipairs(PET_GUIDS) do
+        pcall(function()
+            PetsService:FireServer("UnequipPet", guid)
+        end)
     end
-    -- fallback: đưa mọi Tool đang cầm về Backpack
-    for _,v in ipairs(Character:GetChildren()) do
-        if v:IsA("Tool") then
-            v.Parent = Backpack
-            waitx(0.03)
-        end
-    end
-    return true
 end
 
--- ===== UI 2 NÚT =====
-local sg = Instance.new("ScreenGui")
-sg.Name = "PetTwoButtonsUI"
+-- ===== HUD MINI (TRICERATOPS TIMER) =====
+local function createMiniTimer()
+    local f = Instance.new("Frame")
+    f.Size = UDim2.fromOffset(160, 58)
+    f.Position = UDim2.fromOffset(16, 120)
+    f.BackgroundColor3 = Color3.fromRGB(25,25,30)
+    f.BorderSizePixel = 0
+    local c = Instance.new("UICorner", f); c.CornerRadius = UDim.new(0,10)
+
+    local title = Instance.new("TextLabel", f)
+    title.BackgroundTransparency = 1
+    title.Position = UDim2.fromOffset(8,6)
+    title.Size = UDim2.new(1,-72,0,18)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.TextColor3 = Color3.fromRGB(210,210,210)
+    title.Text = "Triceratops"
+
+    local sync = Instance.new("TextButton", f)
+    sync.Position = UDim2.fromOffset(100,6)
+    sync.Size = UDim2.fromOffset(52,18)
+    sync.BackgroundColor3 = Color3.fromRGB(55,55,65)
+    sync.Text = "SYNC"
+    sync.Font = Enum.Font.GothamBold
+    sync.TextSize = 12
+    sync.TextColor3 = Color3.fromRGB(235,235,235)
+    Instance.new("UICorner", sync).CornerRadius = UDim.new(0,6)
+
+    local t = Instance.new("TextLabel", f)
+    t.BackgroundTransparency = 1
+    t.Position = UDim2.fromOffset(8,26)
+    t.Size = UDim2.new(1,-16,0,26)
+    t.Font = Enum.Font.GothamBlack
+    t.TextSize = 22
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.TextColor3 = Color3.fromRGB(255,255,255)
+    t.Text = "--:--"
+
+    return f, t, sync
+end
+
+local sg = Instance.new("ScreenGui", PlayerGui)
+sg.Name = "TriPetTimerUI"
 sg.ResetOnSpawn = false
-sg.IgnoreGuiInset = true
-sg.Parent = PlayerGui
 
-local frame = Instance.new("Frame", sg)
-frame.Name = "Dock"
-frame.AnchorPoint = Vector2.new(1,1)
-frame.Position = UDim2.new(1, -16, 1, -140)
-frame.Size = UDim2.new(0, 170, 0, 100)
-frame.BackgroundColor3 = Color3.fromRGB(28, 28, 33)
+local triFrame, triLabel, triSync = createMiniTimer()
+triFrame.Parent = sg
 
-local uic = Instance.new("UICorner", frame); uic.CornerRadius = UDim.new(0, 14)
-local stroke = Instance.new("UIStroke", frame); stroke.Thickness = 1; stroke.Transparency = 0.25
-local pad = Instance.new("UIPadding", frame); pad.PaddingTop = UDim.new(0,10); pad.PaddingBottom = UDim.new(0,10); pad.PaddingLeft = UDim.new(0,10); pad.PaddingRight = UDim.new(0,10)
+local function fmt(sec)
+    if sec<=0 then return "READY" end
+    local m = math.floor(sec/60)
+    local s = sec%60
+    return string.format("%02d:%02d", m, s)
+end
 
-local list = Instance.new("UIListLayout", frame)
-list.FillDirection = Enum.FillDirection.Vertical
-list.Padding = UDim.new(0, 10)
-list.HorizontalAlignment = Enum.HorizontalAlignment.Center
-list.VerticalAlignment = Enum.VerticalAlignment.Center
+local triDeadline
+local function startTriTimer()  triDeadline  = time() + getgenv().CFG.TRI_INTERVAL_SEC  end
+triSync.MouseButton1Click:Connect(startTriTimer)
 
-local function makeBtn(txt, color3)
+RunService.RenderStepped:Connect(function()
+    triLabel.Text = triDeadline and fmt(triDeadline - time()) or "--:--"
+end)
+
+-- ===== UI NÚT THẢ / THU =====
+local dock = Instance.new("Frame", sg)
+dock.AnchorPoint = Vector2.new(1,1)
+dock.Position = UDim2.new(1, -16, 1, -120)
+dock.Size = UDim2.fromOffset(170, 96)
+dock.BackgroundColor3 = Color3.fromRGB(28,28,33)
+Instance.new("UICorner", dock).CornerRadius = UDim.new(0,14)
+
+local vlist = Instance.new("UIListLayout", dock)
+vlist.Padding = UDim.new(0,8)
+vlist.HorizontalAlignment = Enum.HorizontalAlignment.Center
+vlist.VerticalAlignment = Enum.VerticalAlignment.Center
+
+local function mkBtn(txt, color)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, 0, 0, 36)
+    b.Size = UDim2.new(1,-16,0,36)
     b.Text = txt
     b.Font = Enum.Font.GothamBold
     b.TextSize = 16
     b.TextColor3 = Color3.fromRGB(255,255,255)
-    b.BackgroundColor3 = color3 or Color3.fromRGB(55,115,255)
-    local c = Instance.new("UICorner", b); c.CornerRadius = UDim.new(0, 10)
-    local s = Instance.new("UIStroke", b); s.Thickness = 1; s.Transparency = 0.3
+    b.BackgroundColor3 = color or Color3.fromRGB(60,120,255)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,10)
+    b.Parent = dock
     return b
 end
 
-local btnDrop = makeBtn("THẢ (Moon Cat)")
-local btnRecall = makeBtn("THU", Color3.fromRGB(245,90,90))
-btnDrop.Parent = frame
-btnRecall.Parent = frame
+local btnDrop = mkBtn("THẢ (Auto)")
+local btnRecall = mkBtn("THU", Color3.fromRGB(245,90,90))
 
--- Kéo thả khung
-local dragging = false
-local dragStart, startPos
-frame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = frame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
-        end)
-    end
-end)
-UIS.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
--- Debounce ngắn
-local busy = false
-local function withBusy(fn)
-    if busy then return end
-    busy = true
-    task.spawn(function()
-        local ok, err = pcall(fn)
-        if not ok then warn("[PetUI] Error:", err) end
-        busy = false
-    end)
-end
-
--- Sự kiện nút
+-- ===== LOGIC CHÍNH =====
+local running = false
 btnDrop.MouseButton1Click:Connect(function()
-    withBusy(function()
-        dropMoonCats()
+    if running then return end
+    running = true
+    task.spawn(function()
+        local triPlaced = placeByKeywordFast(getgenv().CFG.TRI_KEYWORD, 1)
+        if triPlaced > 0 then startTriTimer() end
+
+        while triDeadline do
+            if triDeadline - time() <= getgenv().CFG.START_MOON_AT_LEFT then
+                placeByKeywordFast(getgenv().CFG.MOON_KEYWORD, getgenv().CFG.MAX_MOON_TO_PLACE)
+                break
+            end
+            task.wait(0.05)
+        end
+        running = false
     end)
 end)
 
 btnRecall.MouseButton1Click:Connect(function()
-    withBusy(function()
-        recallAll()
-        print("[PetUI] ĐÃ THU TẤT CẢ PET")
-    end)
+    if running then return end
+    recallByGUIDs()
+    triDeadline = nil
+    triLabel.Text = "--:--"
 end)
 
-print("[PetUI] Sẵn sàng. Nút THẢ sẽ cầm Tool rồi đặt 7 \""..getgenv().CFG.PET_KEYWORD.."\".")
+print("[TriTimer] FAST drop ready + Recall by GUID list.")
