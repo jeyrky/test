@@ -1,184 +1,348 @@
---================= TUỲ CHỈNH NHANH =================
-local allowedKeywords = { "Rare", "Common", "Epic", "Brainrot God", "Legendary", "Mythic", "Secret" }
-local blacklistNames  = {
-    ["Cocofanto Elefanto"] = true,
-    ["Girafa Celestre"]    = true,
-    ["Gattatino Nyanino"]  = true
+
+--[[  GROW A GARDEN – AUTO LOOP (Recall -> Drop -> Wait 15s -> Repeat)
+    • Luồng: THU → THẢ (Tri + Moon ở mốc) → HẾT GIỜ → CHỜ 15s → LẶP
+    • HUD: chỉ đồng hồ Triceratops
+    • Nút: BẮT ĐẦU AUTO, DỪNG/TIẾP TỤC, THẢ, THU
+]]
+
+-- ===== CẤU HÌNH =====
+getgenv().CFG = {
+    TRI_KEYWORD         = "Triceratops",
+    MOON_KEYWORD        = "Moon Cat",
+
+    TRI_INTERVAL_SEC    = 3*60 + 33,  -- 3:33 = 213s
+    START_MOON_AT_LEFT  = 75,         -- khi Triceratops còn 1:15
+
+    MAX_MOON_TO_PLACE   = 7,          -- số Moon Cat cần thả
+
+    TRY_ACTIVATE        = true,
+    TRY_FIRE_REMOTE_CHILDREN = true,
+    TRY_CLICK_TAP       = true,
+
+    CLICK_FORWARD_STUDS = 6,
+    LOOP_COOLDOWN_SEC   = 15,         -- chờ 15s sau khi TRICERATOPS hết giờ
 }
 
-local holdTime  = 3      -- giữ phím E bao lâu
-local checkInterval = 0.1
---===================================================
+-- Danh sách GUID pet cần thu lại
+local PET_GUIDS = {
+    "{a73a4332-1d09-45ad-9634-55065ef19403}",
+    "{c3b90c29-633e-40d4-8f12-2fa5ab301fb1}",
+    "{30c3484b-0ac5-4d9e-8c4b-3df3f45c66a7}",
+    "{c14ba42b-9885-4bd1-8d6f-33d79342e94d}",
+    "{a6ec3033-d086-4630-8deb-afcf83d59ac4}",
+    "{0305b311-1b64-4f63-8ecf-e1e1cbb772ea}",
+    "{558c6035-2b22-40f1-a969-48fb9cf43a67}",
+    "{781b17ee-ecd4-42a7-b0dc-d49f3f156a2e}"
+}
 
-local Lighting       = game:GetService("Lighting")
-local Players        = game:GetService("Players")
-local VirtualInput   = game:GetService("VirtualInputManager")
-local lp             = Players.LocalPlayer
-local char           = lp.Character or lp.CharacterAdded:Wait()
-local hrp            = char:WaitForChild("HumanoidRootPart")
-local humanoid       = char:WaitForChild("Humanoid")
 
--- ❌ Giảm hiệu ứng & FPS
-pcall(function() game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All,false) end)
-Lighting.GlobalShadows, Lighting.FogEnd, Lighting.Brightness = false, 1e6, 0
-if workspace:FindFirstChildOfClass("Terrain") then
-   local T = workspace:FindFirstChildOfClass("Terrain")
-   T.WaterWaveSize, T.WaterWaveSpeed, T.WaterReflectance, T.WaterTransparency = 0, 0, 0, 1
-end
-local function stripEffects(obj)
-   for _,v in ipairs(obj:GetDescendants()) do
-      if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then v.Enabled = false
-      elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then v.Enabled = false
-      elseif v:IsA("Decal") then v.Transparency = 1
-      elseif v:IsA("Texture") then v:Destroy() end
-   end
-end
-stripEffects(workspace)
-workspace.DescendantAdded:Connect(function(o) task.wait(.1) pcall(stripEffects, o) end)
+-- ===== DỊCH VỤ =====
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local VIM = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local RS = game:GetService("ReplicatedStorage")
 
--- 📌 Lưu 6 điểm (1-4 vùng, 5 nhà mình, 6 cửa địch)
-local points, autoRunning = {}, false
+local LP = Players.LocalPlayer
+local Character = LP.Character or LP.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local HRP = Character:WaitForChild("HumanoidRootPart")
+local Backpack = LP:WaitForChild("Backpack")
+local PlayerGui = LP:WaitForChild("PlayerGui")
 
--- ========== UI ==========
-local gui = Instance.new("ScreenGui", game.CoreGui)
-local frame = Instance.new("Frame", gui)
-frame.Size, frame.Position = UDim2.new(0,220,0,330), UDim2.new(0.02,0,0.38,0)
-frame.BackgroundColor3, frame.Active, frame.Draggable = Color3.fromRGB(30,30,30), true, true
+local PetsService = RS:WaitForChild("GameEvents"):WaitForChild("PetsService")
 
-local function makeBtn(txt,y)
-   local b = Instance.new("TextButton", frame)
-   b.Size, b.Position = UDim2.new(1,-10,0,40), UDim2.new(0,5,0,y)
-   b.Text, b.TextSize, b.Font = txt, 18, Enum.Font.SourceSansBold
-   b.BackgroundColor3, b.TextColor3 = Color3.fromRGB(60,60,60), Color3.new(1,1,1)
-   return b
+local function waitx(t) task.wait(t or 0) end
+local function nameMatch(toolName, keyword)
+    return string.find(string.lower(toolName or ""), string.lower(keyword or ""), 1, true) ~= nil
 end
 
-local btnP1,btnP2,btnP3,btnP4 = makeBtn("Lưu góc 1",5), makeBtn("Lưu góc 2",50), makeBtn("Lưu góc 3",95), makeBtn("Lưu góc 4",140)
-local btnP5,btnP6 = makeBtn("Lưu nhà mình",185), makeBtn("Lưu cửa địch",230)
-local btnRun = makeBtn("🚀 Bắt Đầu",275)
-
-local status = Instance.new("TextLabel", frame)
-status.Size, status.Position = UDim2.new(1,0,0,25), UDim2.new(0,0,0,320)
-status.BackgroundTransparency, status.TextScaled, status.TextColor3 = 1, true, Color3.new(1,1,0)
-status.Text = "Chưa chạy"
-
-local function setSaved(btn, txt)
-   btn.Text, btn.BackgroundColor3 = "✅ "..txt, Color3.fromRGB(0,170,0)
-end
-btnP1.MouseButton1Click:Connect(function() points[1]=hrp.Position setSaved(btnP1,"Góc 1")  status.Text="✅ Đã lưu góc 1" end)
-btnP2.MouseButton1Click:Connect(function() points[2]=hrp.Position setSaved(btnP2,"Góc 2")  status.Text="✅ Đã lưu góc 2" end)
-btnP3.MouseButton1Click:Connect(function() points[3]=hrp.Position setSaved(btnP3,"Góc 3")  status.Text="✅ Đã lưu góc 3" end)
-btnP4.MouseButton1Click:Connect(function() points[4]=hrp.Position setSaved(btnP4,"Góc 4")  status.Text="✅ Đã lưu góc 4" end)
-btnP5.MouseButton1Click:Connect(function() points[5]=hrp.Position setSaved(btnP5,"Nhà")    status.Text="✅ Đã lưu nhà"   end)
-btnP6.MouseButton1Click:Connect(function() points[6]=hrp.Position setSaved(btnP6,"Cửa địch") status.Text="✅ Đã lưu cửa địch" end)
-
--- ========== HÀM PHỤ ==========
-local function isInsideQuad(pos)
-   if not (points[1] and points[2] and points[3] and points[4]) then return false end
-   local function sign(p1,p2,p3) return (p1.X-p3.X)*(p2.Z-p3.Z)-(p2.X-p3.X)*(p1.Z-p3.Z) end
-   local b1,b2,b3,b4 = sign(pos,points[1],points[2])<0, sign(pos,points[2],points[3])<0,
-                       sign(pos,points[3],points[4])<0, sign(pos,points[4],points[1])<0
-   return (b1==b2) and (b2==b3) and (b3==b4)
+local function equipTool(tool)
+    pcall(function() Humanoid:EquipTool(tool) end)
+    tool.Parent = Character
+    waitx(0.05)
 end
 
-local function isAllowedPet(name)
-   if blacklistNames[name] then return false end
-   for _,w in ipairs(allowedKeywords) do
-      if name:lower():find(w:lower()) then return true end
-   end
-   return false
-end
-
-local function findRandomPet(retry)
-   retry = retry or 0
-   local pets = {}
-   for _,lbl in ipairs(workspace:GetDescendants()) do
-      if lbl:IsA("TextLabel") then
-         local name = lbl.Text
-         if isAllowedPet(name) then
-            local model = lbl:FindFirstAncestorOfClass("Model")
-            local root  = model and model:FindFirstChildWhichIsA("BasePart")
-            if model and root and isInsideQuad(root.Position) then
-               table.insert(pets,{model=model,root=root})
+local function toolTryActivate(tool)
+    if getgenv().CFG.TRY_ACTIVATE and tool and tool:IsA("Tool") then
+        pcall(function() tool:Activate() end)
+    end
+    if getgenv().CFG.TRY_FIRE_REMOTE_CHILDREN and tool then
+        for _,child in ipairs(tool:GetDescendants()) do
+            if child.ClassName == "RemoteEvent" then
+                local pos = HRP.Position + HRP.CFrame.LookVector * getgenv().CFG.CLICK_FORWARD_STUDS
+                pcall(function() child:FireServer(pos) end)
             end
-         end
-      end
-   end
-   if #pets==0 and retry<5 then task.wait(0.2) return findRandomPet(retry+1) end
-   return (#pets>0) and pets[math.random(1,#pets)] or nil
+        end
+    end
 end
 
-local function pressE(sec)
-   VirtualInput:SendKeyEvent(true,Enum.KeyCode.E,false,game)
-   task.wait(sec)
-   VirtualInput:SendKeyEvent(false,Enum.KeyCode.E,false,game)
+local function screenCenter()
+    local cam = workspace.CurrentCamera
+    local vp = cam.ViewportSize
+    return vp.X/2, vp.Y/2
 end
 
-local function moveToPos(pos)
-   local dest = Vector3.new(pos.X,hrp.Position.Y,pos.Z)
-   humanoid:MoveTo(dest)
-   local t0 = tick()
-   repeat task.wait(0.05)
-   until not autoRunning or (hrp.Position-dest).Magnitude<=1 or tick()-t0>10
+local function tryClickTap()
+    if not getgenv().CFG.TRY_CLICK_TAP then return end
+    local x, y = screenCenter()
+    pcall(function()
+        if UIS.TouchEnabled and not UIS.MouseEnabled then
+            VIM:SendTouchEvent(x, y, 1, true); VIM:SendTouchEvent(x, y, 1, false)
+        else
+            VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
+            VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
+        end
+    end)
 end
 
--- ========== CHU TRÌNH ĂN TRỘM ==========
-local function stealCycle()
-   while autoRunning do
-      -- 1. tới cửa địch
-      status.Text="🏃 Đến cửa địch"
-      moveToPos(points[6])  if not autoRunning then break end
-
-      -- 2. quét pet
-      status.Text="🔎 Quét pet"
-      local pet = findRandomPet()
-      if pet then
-         status.Text="🎯 Pet: "..pet.model.Name
-
-         -- 3. chạy tới pet
-         moveToPos(pet.root.Position)  if not autoRunning then break end
-
-         -- 4. đợi đứng sát rồi giữ E
-         local t0 = tick()
-         repeat task.wait(0.05)
-         until not autoRunning or (hrp.Position - pet.root.Position).Magnitude<=1 or tick()-t0>3
-
-         if (hrp.Position - pet.root.Position).Magnitude<=1 then
-            status.Text="💰 Ăn trộm..."
-            task.wait(0.1)
-            pressE(holdTime)
-         else
-            status.Text="⚠️ Đứng sai vị trí, bỏ qua"
-         end
-      else
-         status.Text="😴 Không thấy pet"
-      end
-      if not autoRunning then break end
-
-      -- 5. quay lại cửa địch
-      status.Text="↩️ Về cửa địch"
-      moveToPos(points[6])  if not autoRunning then break end
-
-      -- 6. về nhà
-      status.Text="🏡 Về nhà"
-      moveToPos(points[5])
-   end
+-- ===== SIÊU NHANH: Thả tất cả pet khớp keyword
+local function placeByKeywordFast(keyword, limitCount)
+    local placed = 0
+    for _,it in ipairs(Backpack:GetChildren()) do
+        if it:IsA("Tool") and nameMatch(it.Name, keyword) then
+            equipTool(it)
+            toolTryActivate(it)
+            tryClickTap()
+            placed += 1
+            if limitCount and placed >= limitCount then break end
+        end
+    end
+    return placed
 end
 
--- ========== NÚT BẮT ĐẦU ==========
-btnRun.MouseButton1Click:Connect(function()
-   for i=1,6 do
-      if not points[i] then
-         status.Text, status.TextColor3 = "⚠️ Thiếu vị trí "..i, Color3.fromRGB(255,0,0)
-         return
-      end
-   end
-   autoRunning = not autoRunning
-   btnRun.Text = autoRunning and "⏹ Dừng" or "🚀 Bắt Đầu"
-   status.TextColor3 = Color3.fromRGB(0,200,255)
-   status.Text = autoRunning and "🔄 Bắt đầu..." or "Đã dừng"
-   if autoRunning then task.spawn(stealCycle) end
+-- ===== THU PET THEO GUID =====
+local function recallByGUIDs()
+    for _,guid in ipairs(PET_GUIDS) do
+        pcall(function()
+            PetsService:FireServer("UnequipPet", guid)
+        end)
+        task.wait(0.06)
+    end
+end
+
+-- ===== HUD MINI (TRICERATOPS TIMER) =====
+local function createMiniTimer()
+    local f = Instance.new("Frame")
+    f.Size = UDim2.fromOffset(170, 74)
+    f.Position = UDim2.fromOffset(16, 120)
+    f.BackgroundColor3 = Color3.fromRGB(25,25,30)
+    f.BorderSizePixel = 0
+    local c = Instance.new("UICorner", f); c.CornerRadius = UDim.new(0,10)
+
+    local title = Instance.new("TextLabel", f)
+    title.BackgroundTransparency = 1
+    title.Position = UDim2.fromOffset(8,6)
+    title.Size = UDim2.new(1,-16,0,18)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.TextColor3 = Color3.fromRGB(210,210,210)
+    title.Text = "Triceratops"
+
+    local t = Instance.new("TextLabel", f)
+    t.BackgroundTransparency = 1
+    t.Position = UDim2.fromOffset(8,26)
+    t.Size = UDim2.new(1,-16,0,26)
+    t.Font = Enum.Font.GothamBlack
+    t.TextSize = 22
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.TextColor3 = Color3.fromRGB(255,255,255)
+    t.Text = "--:--"
+
+    local status = Instance.new("TextLabel", f)
+    status.BackgroundTransparency = 1
+    status.Position = UDim2.fromOffset(8,50)
+    status.Size = UDim2.new(1,-16,0,18)
+    status.Font = Enum.Font.Gotham
+    status.TextSize = 12
+    status.TextXAlignment = Enum.TextXAlignment.Left
+    status.TextColor3 = Color3.fromRGB(200,200,200)
+    status.Text = "IDLE"
+
+    return f, t, status
+end
+
+local sg = Instance.new("ScreenGui", PlayerGui)
+sg.Name = "TriPetTimerUI"
+sg.ResetOnSpawn = false
+
+local triFrame, triLabel, statusLabel = createMiniTimer()
+triFrame.Parent = sg
+
+local function fmt(sec)
+    if sec<=0 then return "READY" end
+    local m = math.floor(sec/60)
+    local s = sec%60
+    return string.format("%02d:%02d", m, s)
+end
+
+local triDeadline
+
+-- Live update HUD
+RunService.RenderStepped:Connect(function()
+    triLabel.Text = triDeadline and fmt(triDeadline - time()) or "--:--"
 end)
 
--- Giữ script sống
-while true do task.wait(1) end
+-- ===== UI NÚT =====
+local dock = Instance.new("Frame", sg)
+dock.AnchorPoint = Vector2.new(1,1)
+dock.Position = UDim2.new(1, -16, 1, -120)
+dock.Size = UDim2.fromOffset(200, 160)
+dock.BackgroundColor3 = Color3.fromRGB(28,28,33)
+Instance.new("UICorner", dock).CornerRadius = UDim.new(0,14)
+
+local vlist = Instance.new("UIListLayout", dock)
+vlist.Padding = UDim.new(0,8)
+vlist.HorizontalAlignment = Enum.HorizontalAlignment.Center
+vlist.VerticalAlignment = Enum.VerticalAlignment.Center
+
+local function mkBtn(txt, color, height)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1,-16,0,height or 36)
+    b.Text = txt
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 16
+    b.TextColor3 = Color3.fromRGB(255,255,255)
+    b.BackgroundColor3 = color or Color3.fromRGB(60,120,255)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,10)
+    b.Parent = dock
+    return b
+end
+
+local btnAuto   = mkBtn("BẮT ĐẦU AUTO")
+local btnPause  = mkBtn("DỪNG / TIẾP TỤC", Color3.fromRGB(255,170,60))
+local btnDrop   = mkBtn("THẢ (Thủ công)")
+local btnRecall = mkBtn("THU", Color3.fromRGB(245,90,90))
+
+-- ===== TRẠNG THÁI AUTO =====
+local autoEnabled = false
+local paused = false
+local loopThread
+
+local function setStatus(s) statusLabel.Text = s end
+
+local function startTriTimer()
+    triDeadline = time() + getgenv().CFG.TRI_INTERVAL_SEC
+end
+
+-- 1 CHU KỲ: THU → THẢ TRI → chờ mốc để THẢ MOON → chờ TRI hết → cooldown 15s
+local function doOneCycle()
+    -- THU
+    setStatus("THU pet...")
+    recallByGUIDs()
+    task.wait(0.3)
+
+    -- THẢ TRICERATOPS
+    setStatus("THẢ Triceratops...")
+    local triPlaced = placeByKeywordFast(getgenv().CFG.TRI_KEYWORD, 1)
+    if triPlaced <= 0 then
+        setStatus("Không tìm thấy Tri trong Backpack")
+        triDeadline = nil
+        return
+    end
+    startTriTimer()
+    setStatus("Đang đếm giờ...")
+
+    -- ĐỢI MỐC để THẢ MOON
+    local moonDropped = false
+    while triDeadline and (triDeadline - time()) > 0 do
+        if paused then
+            setStatus("ĐÃ DỪNG (PAUSE)")
+            repeat task.wait(0.1) until not paused
+            setStatus("TIẾP TỤC")
+        end
+
+        local left = triDeadline - time()
+        if (not moonDropped) and left <= getgenv().CFG.START_MOON_AT_LEFT then
+            setStatus("THẢ Moon Cat...")
+            placeByKeywordFast(getgenv().CFG.MOON_KEYWORD, getgenv().CFG.MAX_MOON_TO_PLACE)
+            moonDropped = true
+        end
+        task.wait(0.05)
+    end
+
+    -- HẾT GIỜ → COOLDOWN 15s
+    setStatus("Hết giờ → chờ ".. tostring(getgenv().CFG.LOOP_COOLDOWN_SEC) .."s")
+    triDeadline = nil
+    local t0 = time()
+    while time() - t0 < getgenv().CFG.LOOP_COOLDOWN_SEC do
+        if paused then
+            setStatus("ĐÃ DỪNG (PAUSE)")
+            repeat task.wait(0.1) until not paused
+            setStatus("TIẾP TỤC")
+            -- tiếp tục nốt phần cooldown
+        end
+        task.wait(0.1)
+    end
+end
+
+-- VÒNG LẶP AUTO
+local function runLoop()
+    while autoEnabled do
+        doOneCycle()
+        if not autoEnabled then break end
+    end
+    setStatus("IDLE")
+end
+
+-- ===== NÚT HÀNH ĐỘNG =====
+btnAuto.MouseButton1Click:Connect(function()
+    if autoEnabled then
+        -- tắt auto
+        autoEnabled = false
+        btnAuto.Text = "BẮT ĐẦU AUTO"
+        setStatus("IDLE")
+        return
+    end
+    -- bật auto
+    autoEnabled = true
+    paused = false
+    btnAuto.Text = "ĐANG CHẠY AUTO..."
+    setStatus("BẮT ĐẦU AUTO")
+    if loopThread and coroutine.status(loopThread) ~= "dead" then
+        -- đã có vòng trước, bỏ
+    end
+    loopThread = task.spawn(runLoop)
+end)
+
+btnPause.MouseButton1Click:Connect(function()
+    if not autoEnabled then
+        setStatus("AUTO chưa bật")
+        return
+    end
+    paused = not paused
+    btnPause.Text = paused and "ĐANG DỪNG (Nhấn để TIẾP TỤC)" or "DỪNG / TIẾP TỤC"
+    setStatus(paused and "ĐÃ DỪNG (PAUSE)" or "TIẾP TỤC")
+end)
+
+-- Thả/Thu thủ công vẫn giữ
+btnDrop.MouseButton1Click:Connect(function()
+    if autoEnabled then return end
+    setStatus("THẢ Tri + Moon (thủ công)")
+    local triPlaced = placeByKeywordFast(getgenv().CFG.TRI_KEYWORD, 1)
+    if triPlaced > 0 then
+        triDeadline = time() + getgenv().CFG.TRI_INTERVAL_SEC
+    end
+    task.spawn(function()
+        -- thả Moon ở mốc
+        while triDeadline and (triDeadline - time()) > 0 do
+            local left = triDeadline - time()
+            if left <= getgenv().CFG.START_MOON_AT_LEFT then
+                placeByKeywordFast(getgenv().CFG.MOON_KEYWORD, getgenv().CFG.MAX_MOON_TO_PLACE)
+                break
+            end
+            task.wait(0.05)
+        end
+        setStatus("IDLE")
+    end)
+end)
+
+btnRecall.MouseButton1Click:Connect(function()
+    if autoEnabled then return end
+    recallByGUIDs()
+    triDeadline = nil
+    setStatus("IDLE")
+end)
+
+print("[TriTimer] AUTO LOOP ready – Recall → Drop → Wait 15s → Repeat. Có PAUSE/RESUME.")
