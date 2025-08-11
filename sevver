@@ -1,90 +1,90 @@
--- UI 2 NÚT: THẢ / THU (THU = PICK UP) – BẢN FIX LUÔN HIỆN UI
--- - UI mount vào CoreGui/gethui() (fallback PlayerGui)
--- - THẢ: cầm tool rồi đặt tại chỗ (Moon Cat)
--- - THU : Pick up Moon Cat quanh bạn
+--[[
+UI 2 NÚT: THẢ / THU (BẢN THẢ = CẦM LÊN RỒI ĐẶT)
+- THẢ: tìm pet theo tên trong Backpack -> Equip lên nhân vật -> cố gắng "đặt" xuống vườn
+- THU : recall toàn bộ (remote nếu có, fallback đưa Tool về Backpack)
+]]
 
 -- ===== CẤU HÌNH =====
 getgenv().CFG = {
-    -- THẢ
-    PET_KEYWORD = "Moon Cat",
-    MAX_TO_PLACE = 7,
-    BETWEEN_EACH = 0.08,
-    TRY_ACTIVATE = true,
-    TRY_FIRE_REMOTE_CHILDREN = true,
-    TRY_CLICK_TAP = true,
-    CLICK_FORWARD_STUDS = 6,
+    PET_KEYWORD = "Moon Cat",            -- tên/chuỗi cần khớp (bắt cả "Moon Cat (2)" ...)
+    MAX_TO_PLACE = 7,                    -- số lượng cần thả
+    BETWEEN_EACH = 0.08,                 -- delay nhỏ giữa mỗi lần thả
 
-    -- THU (PICK UP)
-    PICKUP_KEYWORD = "Moon Cat",
-    MAX_TO_PICK = 7,
-    PICKUP_RADIUS = 40,
-    MOVE_CLOSE = true,
-    MOVE_DISTANCE = 6,
-    BETWEEN_PICK = 0.08,
+    -- Ưu tiên các cách "đặt" theo thứ tự:
+    TRY_ACTIVATE = true,                 -- tool:Activate()
+    TRY_FIRE_REMOTE_CHILDREN = true,     -- FireServer tất cả RemoteEvent trong tool (Place/Deploy/Activate,...)
+    TRY_CLICK_TAP = true,                -- giả lập click/tap 1 cái để đặt
 
-    -- Ưu tiên nhặt:
-    PICKUP_REMOTE_PATH = "ReplicatedStorage.Remotes.PickUpPet", -- đổi đúng nếu game khác
-    USE_PROXIMITY_PROMPT = true,
-    USE_CLICKDETECTOR = true,
-    USE_SCREEN_CLICK = true,
-
-    -- Remote recall hàng loạt (tắt mặc định vì game của anh là Pick up):
-    RECALL_BANG_REMOTE = false,
+    -- Remote recall (nếu game có):
+    RECALL_BANG_REMOTE = true,
     RECALL_REMOTE_PATH = "ReplicatedStorage.Remotes.RecallAllPets",
+
+    -- Vị trí click mặc định: ngay trước mặt nhân vật 6 studs (đủ an toàn)
+    CLICK_FORWARD_STUDS = 6,
 }
 
--- ===== SERVICES =====
+-- ===== DỊCH VỤ =====
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local VIM = game:GetService("VirtualInputManager")
-local RS = game:GetService("RunService")
 local LP = Players.LocalPlayer
+local Character = LP.Character or LP.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local HRP = Character:WaitForChild("HumanoidRootPart")
+local Backpack = LP:WaitForChild("Backpack")
+local PlayerGui = LP:WaitForChild("PlayerGui")
+
 local function waitx(t) task.wait(t or 0) end
 
--- Chờ nhân vật sẵn sàng (tránh nil khi exec sớm)
-local function awaitChar()
-    local char = LP.Character or LP.CharacterAdded:Wait()
-    local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid")
-    local hrp = char:FindFirstChild("HumanoidRootPart") or char:WaitForChild("HumanoidRootPart")
-    return char, hum, hrp
-end
-local Character, Humanoid, HRP = awaitChar()
-local Backpack = LP:WaitForChild("Backpack")
-
--- ===== GUI PARENT AN TOÀN (CoreGui/gethui) =====
-local function getGuiParent()
-    local ok, uiRoot = pcall(function()
-        if gethui then
-            return gethui()
-        end
-    end)
-    if ok and uiRoot then return uiRoot end
-
-    local cg
-    pcall(function() cg = game:GetService("CoreGui") end)
-    if cg then return cg end
-
-    local pg = nil
-    pcall(function() pg = LP:WaitForChild("PlayerGui") end)
-    return pg or game:GetService("CoreGui")
-end
-
-local GUI_PARENT = getGuiParent()
-
--- ===== TIỆN ÍCH CHUNG =====
 local function byPath(pathStr)
     if not pathStr or pathStr=="" then return nil end
-    local node = game
-    for seg in string.gmatch(pathStr, "[^%.]+") do
-        node = node:FindFirstChild(seg)
-        if not node then return nil end
+    local n = game
+    for seg in string.gmatch(pathStr,"[^%.]+") do
+        n = n:FindFirstChild(seg)
+        if not n then return nil end
     end
-    return node
+    return n
 end
 
-local function nameMatch(s, key)
-    s = string.lower(s or ""); key = string.lower(key or "")
-    return string.find(s, key, 1, true) ~= nil
+local recallRemote = nil
+if getgenv().CFG.RECALL_BANG_REMOTE then
+    recallRemote = byPath(getgenv().CFG.RECALL_REMOTE_PATH)
+end
+
+-- ===== HÀM BỔ TRỢ =====
+local function nameMatch(toolName, keyword)
+    -- khớp mềm: chứa keyword (không phân biệt hoa/thường)
+    toolName = string.lower(toolName or "")
+    keyword = string.lower(keyword or "")
+    return string.find(toolName, keyword, 1, true) ~= nil
+end
+
+local function equipTool(tool)
+    -- đảm bảo cầm trên tay
+    pcall(function() Humanoid:EquipTool(tool) end)
+    tool.Parent = Character
+    waitx(0.05)
+end
+
+local function toolTryActivate(tool)
+    -- 1) cố Activate
+    if getgenv().CFG.TRY_ACTIVATE and tool and tool:IsA("Tool") then
+        pcall(function() tool:Activate() end)
+        waitx(0.05)
+    end
+    -- 2) bắn tất cả RemoteEvent con (Place/Deploy/Activate/Use...)
+    if getgenv().CFG.TRY_FIRE_REMOTE_CHILDREN and tool then
+        for _,child in ipairs(tool:GetDescendants()) do
+            if child.ClassName == "RemoteEvent" then
+                -- gửi vị trí trước mặt để nhiều tool hiểu được
+                local targetPos = HRP.Position + HRP.CFrame.LookVector * getgenv().CFG.CLICK_FORWARD_STUDS
+                local payload = targetPos
+                -- nhiều game chỉ cần nil / true / {} – thử những biến thể an toàn
+                pcall(function() child:FireServer(payload) end)
+                waitx(0.02)
+            end
+        end
+    end
 end
 
 local function screenCenter()
@@ -93,225 +93,91 @@ local function screenCenter()
     return vp.X/2, vp.Y/2
 end
 
-local function worldToScreen(pos)
-    local cam = workspace.CurrentCamera
-    local v2, onScreen = cam:WorldToViewportPoint(pos)
-    return Vector2.new(v2.X, v2.Y), onScreen
-end
-
-local function clickAtScreen(x, y)
-    if UIS.TouchEnabled and not UIS.MouseEnabled then
-        VIM:SendTouchEvent(x, y, 1, true); VIM:SendTouchEvent(x, y, 1, false)
-    else
-        VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
-        VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
-    end
-end
-
--- ========= THẢ =========
-local function equipTool(tool)
-    if not tool or not tool:IsA("Tool") then return end
-    pcall(function() Humanoid:EquipTool(tool) end)
-    tool.Parent = Character
-    waitx(0.05)
-end
-
-local function tryActivateTool(tool)
-    if getgenv().CFG.TRY_ACTIVATE then pcall(function() tool:Activate() end) waitx(0.05) end
-    if getgenv().CFG.TRY_FIRE_REMOTE_CHILDREN then
-        for _,d in ipairs(tool:GetDescendants()) do
-            if d.ClassName == "RemoteEvent" then
-                local targetPos = HRP.Position + HRP.CFrame.LookVector * getgenv().CFG.CLICK_FORWARD_STUDS
-                pcall(function() d:FireServer(targetPos) end)
-                waitx(0.02)
-            end
-        end
-    end
-end
-
-local function tryCenterClick()
+local function tryClickTap()
     if not getgenv().CFG.TRY_CLICK_TAP then return end
     local x, y = screenCenter()
-    clickAtScreen(x, y)
+    -- Giả lập 1 lần click/tap giữa màn hình
+    pcall(function()
+        if UIS.TouchEnabled and not UIS.MouseEnabled then
+            VIM:SendTouchEvent(x, y, 1, true)  -- press
+            VIM:SendTouchEvent(x, y, 1, false) -- release
+        else
+            VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)  -- down
+            VIM:SendMouseButtonEvent(x, y, 0, false, game, 0) -- up
+        end
+    end)
 end
 
 local function placeOne(tool)
     if not tool or not tool:IsA("Tool") then return false end
     equipTool(tool)
-    tryActivateTool(tool)
-    tryCenterClick()
+    toolTryActivate(tool)
+    tryClickTap()
     waitx(0.05)
     return true
 end
 
-local function dropPets()
-    local key = getgenv().CFG.PET_KEYWORD
+local function dropMoonCats()
     local need = getgenv().CFG.MAX_TO_PLACE
+    local keyword = getgenv().CFG.PET_KEYWORD
     local placed = 0
+
+    -- lượt 1: theo thứ tự ổn định của Backpack (để hạn chế double)
     for _,it in ipairs(Backpack:GetChildren()) do
         if placed >= need then break end
-        if it:IsA("Tool") and nameMatch(it.Name, key) then
+        if it:IsA("Tool") and nameMatch(it.Name, keyword) then
             if placeOne(it) then
                 placed += 1
                 waitx(getgenv().CFG.BETWEEN_EACH)
             end
         end
     end
-    print(("[PetUI] ĐÃ THẢ %d/%d \"%s\""):format(placed, need, key))
+
+    -- lượt 2: nếu trong lúc đặt có item mới vừa vào Backpack (tránh sót)
+    if placed < need then
+        for _,it in ipairs(Backpack:GetChildren()) do
+            if placed >= need then break end
+            if it:IsA("Tool") and nameMatch(it.Name, keyword) then
+                if placeOne(it) then
+                    placed += 1
+                    waitx(getgenv().CFG.BETWEEN_EACH)
+                end
+            end
+        end
+    end
+
+    print(("[PetUI] ĐÃ THẢ %d/%d \"%s\""):format(placed, need, keyword))
     return placed
 end
 
--- ========= THU = PICK UP =========
-local pickupRemote = byPath(getgenv().CFG.PICKUP_REMOTE_PATH)
-local recallRemote = getgenv().CFG.RECALL_BANG_REMOTE and byPath(getgenv().CFG.RECALL_REMOTE_PATH) or nil
-
-local function moveCloseTo(pos)
-    if not getgenv().CFG.MOVE_CLOSE then return end
-    local target = pos
-    local dir = (target - HRP.Position)
-    if dir.Magnitude < 1 then return end
-    dir = dir.Unit
-    local stop = target - dir * getgenv().CFG.MOVE_DISTANCE
-    pcall(function() Humanoid:MoveTo(stop) end)
-    -- chờ tối đa ~2s hoặc đến khi đủ gần
-    local t0 = os.clock()
-    while os.clock() - t0 < 2 do
-        if (HRP.Position - stop).Magnitude < 2 then break end
-        RS.Heartbeat:Wait()
-    end
-end
-
-local function tryPickupWithPrompt(obj)
-    if not getgenv().CFG.USE_PROXIMITY_PROMPT then return false end
-    for _,d in ipairs(obj:GetDescendants()) do
-        if d:IsA("ProximityPrompt") then
-            local isPick = nameMatch(d.ObjectText or d.ActionText or d.Name or "", "pick")
-            if isPick then
-                local fpp = rawget(getfenv(), "fireproximityprompt") or _G.fireproximityprompt or fireproximityprompt
-                if typeof(fpp) == "function" then
-                    d.HoldDuration = 0
-                    fpp(d)
-                    return true
-                else
-                    moveCloseTo((d.Parent:IsA("BasePart") and d.Parent.Position) or obj:GetPivot().Position)
-                    local pivot = obj:GetPivot().Position
-                    local p2d, on = worldToScreen(pivot)
-                    if on then clickAtScreen(p2d.X, p2d.Y) return true end
-                end
-            end
-        end
-    end
-    return false
-end
-
-local function tryPickupWithClickDetector(obj)
-    if not getgenv().CFG.USE_CLICKDETECTOR then return false end
-    for _,d in ipairs(obj:GetDescendants()) do
-        if d:IsA("ClickDetector") then
-            local fcd = rawget(getfenv(), "fireclickdetector") or _G.fireclickdetector or fireclickdetector
-            if typeof(fcd) == "function" then
-                fcd(d)
-                return true
-            else
-                moveCloseTo((d.Parent:IsA("BasePart") and d.Parent.Position) or obj:GetPivot().Position)
-                local pos = (d.Parent:IsA("BasePart") and d.Parent.Position) or obj:GetPivot().Position
-                local p2d, on = worldToScreen(pos)
-                if on then clickAtScreen(p2d.X, p2d.Y) return true end
-            end
-        end
-    end
-    return false
-end
-
-local function tryPickupByRemote(obj)
-    if not pickupRemote then return false end
-    local ok = false
-    local pivot = obj:GetPivot().Position
-    pcall(function() pickupRemote:FireServer(obj) ok = true end)
-    if not ok then pcall(function() pickupRemote:FireServer(pivot) ok = true end) end
-    return ok
-end
-
-local function isCandidate(obj, key)
-    if not obj then return false end
-    if not nameMatch(obj.Name or "", key) then return false end
-    local pos = (obj:IsA("Model") and obj:GetPivot().Position)
-            or (obj:IsA("BasePart") and obj.Position)
-            or nil
-    if not pos then return false end
-    return (pos - HRP.Position).Magnitude <= getgenv().CFG.PICKUP_RADIUS
-end
-
-local function enumerateCandidates()
-    local key = getgenv().CFG.PICKUP_KEYWORD
-    local list = {}
-    for _,obj in ipairs(workspace:GetDescendants()) do
-        if (obj:IsA("Model") or obj:IsA("BasePart")) and isCandidate(obj, key) then
-            table.insert(list, obj)
-        end
-    end
-    table.sort(list, function(a, b)
-        local pa = (a:IsA("Model") and a:GetPivot().Position) or a.Position
-        local pb = (b:IsA("Model") and b:GetPivot().Position) or b.Position
-        return (pa - HRP.Position).Magnitude < (pb - HRP.Position).Magnitude
-    end)
-    return list
-end
-
-local function pickUpPets()
-    if recallRemote then
+local function recallAll()
+    if recallRemote and recallRemote:IsA("RemoteEvent") then
         pcall(function() recallRemote:FireServer() end)
-        print("[PetUI] ĐÃ GỌI RECALL REMOTE")
         return true
     end
-    local want = getgenv().CFG.MAX_TO_PICK
-    local picked = 0
-    local cand = enumerateCandidates()
-    for _,obj in ipairs(cand) do
-        if picked >= want then break end
-        if tryPickupByRemote(obj) or tryPickupWithPrompt(obj) or tryPickupWithClickDetector(obj) then
-            picked += 1
-            waitx(getgenv().CFG.BETWEEN_PICK)
-        else
-            -- dự phòng: click vào vị trí vật thể
-            if getgenv().CFG.USE_SCREEN_CLICK then
-                local pos = (obj:IsA("Model") and obj:GetPivot().Position) or obj.Position
-                moveCloseTo(pos)
-                local p2d, on = worldToScreen(pos)
-                if on then
-                    clickAtScreen(p2d.X, p2d.Y)
-                    picked += 1
-                    waitx(getgenv().CFG.BETWEEN_PICK)
-                end
-            end
+    -- fallback: đưa mọi Tool đang cầm về Backpack
+    for _,v in ipairs(Character:GetChildren()) do
+        if v:IsA("Tool") then
+            v.Parent = Backpack
+            waitx(0.03)
         end
     end
-    print(("[PetUI] ĐÃ NHẶT (PICK UP) %d/%d \"%s\""):format(picked, want, getgenv().CFG.PICKUP_KEYWORD))
-    return picked
+    return true
 end
 
--- ========= UI =========
+-- ===== UI 2 NÚT =====
 local sg = Instance.new("ScreenGui")
 sg.Name = "PetTwoButtonsUI"
+sg.ResetOnSpawn = false
 sg.IgnoreGuiInset = true
-sg.ZIndexBehavior = Enum.ZIndexBehavior.Global
-sg.DisplayOrder = 999999
-pcall(function()
-    if syn and syn.protect_gui then syn.protect_gui(sg) end
-end)
-sg.Parent = GUI_PARENT
+sg.Parent = PlayerGui
 
--- Clear bản cũ nếu có
-local old = GUI_PARENT:FindFirstChild("PetTwoButtonsUI")
-if old and old ~= sg then pcall(function() old:Destroy() end) end
-
-local frame = Instance.new("Frame")
+local frame = Instance.new("Frame", sg)
 frame.Name = "Dock"
 frame.AnchorPoint = Vector2.new(1,1)
 frame.Position = UDim2.new(1, -16, 1, -140)
-frame.Size = UDim2.new(0, 180, 0, 104)
+frame.Size = UDim2.new(0, 170, 0, 100)
 frame.BackgroundColor3 = Color3.fromRGB(28, 28, 33)
-frame.Parent = sg
 
 local uic = Instance.new("UICorner", frame); uic.CornerRadius = UDim.new(0, 14)
 local stroke = Instance.new("UIStroke", frame); stroke.Thickness = 1; stroke.Transparency = 0.25
@@ -325,27 +191,30 @@ list.VerticalAlignment = Enum.VerticalAlignment.Center
 
 local function makeBtn(txt, color3)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, 0, 0, 38)
+    b.Size = UDim2.new(1, 0, 0, 36)
     b.Text = txt
     b.Font = Enum.Font.GothamBold
     b.TextSize = 16
     b.TextColor3 = Color3.fromRGB(255,255,255)
     b.BackgroundColor3 = color3 or Color3.fromRGB(55,115,255)
-    b.AutoButtonColor = true
     local c = Instance.new("UICorner", b); c.CornerRadius = UDim.new(0, 10)
     local s = Instance.new("UIStroke", b); s.Thickness = 1; s.Transparency = 0.3
-    b.Parent = frame
     return b
 end
 
 local btnDrop = makeBtn("THẢ (Moon Cat)")
-local btnPick = makeBtn("THU = PICK UP", Color3.fromRGB(245,90,90))
+local btnRecall = makeBtn("THU", Color3.fromRGB(245,90,90))
+btnDrop.Parent = frame
+btnRecall.Parent = frame
 
--- Drag khung
-local dragging, dragStart, startPos = false, nil, nil
+-- Kéo thả khung
+local dragging = false
+local dragStart, startPos
 frame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-        dragging = true; dragStart = input.Position; startPos = frame.Position
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then dragging = false end
         end)
@@ -358,7 +227,7 @@ UIS.InputChanged:Connect(function(input)
     end
 end)
 
--- Debounce
+-- Debounce ngắn
 local busy = false
 local function withBusy(fn)
     if busy then return end
@@ -370,7 +239,18 @@ local function withBusy(fn)
     end)
 end
 
-btnDrop.MouseButton1Click:Connect(function() withBusy(dropPets) end)
-btnPick.MouseButton1Click:Connect(function() withBusy(pickUpPets) end)
+-- Sự kiện nút
+btnDrop.MouseButton1Click:Connect(function()
+    withBusy(function()
+        dropMoonCats()
+    end)
+end)
 
-print("[PetUI] UI đã mount (CoreGui). THẢ = đặt Moon Cat, THU = Pick up quanh bạn.")
+btnRecall.MouseButton1Click:Connect(function()
+    withBusy(function()
+        recallAll()
+        print("[PetUI] ĐÃ THU TẤT CẢ PET")
+    end)
+end)
+
+print("[PetUI] Sẵn sàng. Nút THẢ sẽ cầm Tool rồi đặt 7 \""..getgenv().CFG.PET_KEYWORD.."\".")
