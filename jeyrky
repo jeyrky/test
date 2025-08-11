@@ -1,166 +1,130 @@
+--[[  GROW A GARDEN – AUTO DROP/RECALL (REMOTE-ONLY, NO CLICK)
+     • THẢ/THU 100% bằng PetsService:FireServer (EquipPet / UnequipPet)
+     • Tách GUID: Triceratops / Moon Cat
+     • Gom tụ: thả theo vòng tròn nhỏ ngay trước mặt
+     • HUD: đếm giờ Triceratops (3:33), tự thả Moon khi còn 1:15
+     • UI: BẮT ĐẦU AUTO / DỪNG MỌI HOẠT ĐỘNG
+]]
+
 -- ===== CẤU HÌNH =====
 getgenv().CFG = {
-    TRI_KEYWORD               = "Triceratops",
-    MOON_KEYWORD              = "Moon Cat",
+    TRI_INTERVAL_SEC     = 3*60 + 33,  -- 3:33
+    START_MOON_AT_LEFT   = 75,         -- giây còn lại của Tri để thả Moon (1:15)
 
-    TRI_INTERVAL_SEC          = 3*60 + 33,  -- 3:33 = 213s
-    START_MOON_AT_LEFT        = 75,         -- khi Triceratops còn 1:15
+    -- Vị trí thả (gom tụ)
+    REMOTE_AHEAD_STUDS   = 6,          -- thả trước mặt bao nhiêu studs
+    REMOTE_SPREAD_RADIUS = 1.2,        -- bán kính cụm (nhỏ = tụ chặt)
+    REMOTE_SPREAD_JITTER = 0.35,       -- rung nhẹ tránh overlap
+    REMOTE_PER_DELAY     = 0.06,       -- delay giữa mỗi lần thả (giây)
 
-    TRY_ACTIVATE              = true,
-    TRY_FIRE_REMOTE_CHILDREN  = true,
-    TRY_CLICK_TAP             = true,
+    -- Recall
+    RECALL_PER_DELAY     = 0.06,       -- delay giữa mỗi lần Unequip (giây)
 
-    CLICK_FORWARD_STUDS       = 6,
-    LOOP_COOLDOWN_SEC         = 15,         -- chờ 15s sau khi TRI hết giờ
+    LOOP_COOLDOWN_SEC    = 15,         -- chờ sau mỗi vòng
 }
 
--- Danh sách GUID cần recall (đã gộp tất cả)
-local PET_GUIDS = {
-    "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
-    "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
-    "{31ee4294-0d7c-4993-813f-2ca605226f39}",
-    "{4220b635-bc02-4cb8-8e86-7959fdd1f06b}",
-    "{2c871dfe-58d9-4a92-9993-939d2c41f0c9}",
-    "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
-    "{ab1786d6-7437-426f-b2ba-e144e82c7cab}",
-    "{24eeef51-7e6a-46e6-8f01-fc23859cbfea}",
-    
-    -- GUID mới thêm
-    "{899f5d26-36f0-40e2-9e8e-bccc7ac12c14}",
-    "{a4d899b1-8fea-4636-a3e4-ba61a5c30e1f}",
-    "{8008570e-dcbf-4792-acc8-3d5ebcf4dc3e}",
+-- ===== ĐIỀN GUID TẠI ĐÂY =====
+getgenv().TRI_GUIDS = {
+    "{502845bc-ea6b-4c49-bf73-119c096925ca}", 
+}
+getgenv().MOON_GUIDS = {
     "{a19d7489-37bd-4b93-b154-3fab4abf3a58}",
     "{7d7e4389-04ca-43df-938a-22e72690b57e}",
     "{820c7557-eb2f-4788-8612-b0646075704d}",
-    "{502845bc-ea6b-4c49-bf73-119c096925ca}", 
-    "{a73a4332-1d09-45ad-9634-55065ef19403}",
-    "{c3b90c29-633e-40d4-8f12-2fa5ab301fb1}",
-    "{30c3484b-0ac5-4d9e-8c4b-3df3f45c66a7}",
-    "{c14ba42b-9885-4bd1-8d6f-33d79342e94d}",
-    "{a6ec3033-d086-4630-8deb-afcf83d59ac4}",
-    "{0305b311-1b64-4f63-8ecf-e1e1cbb772ea}",
-    "{558c6035-2b22-40f1-a969-48fb9cf43a67}",
-    "{781b17ee-ecd4-42a7-b0dc-d49f3f156a2e}"
+    "{8008570e-dcbf-4792-acc8-3d5ebcf4dc3e}",
+    "{a4d899b1-8fea-4636-a3e4-ba61a5c30e1f}",
+    "{899f5d26-36f0-40e2-9e8e-bccc7ac12c14}",
 }
-
+-- (tuỳ chọn) GUID khác muốn recall chung:
+getgenv().EXTRA_GUIDS = { }
 
 -- ===== DỊCH VỤ =====
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local VIM = game:GetService("VirtualInputManager")
+local RS      = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local RS = game:GetService("ReplicatedStorage")
-local LP = Players.LocalPlayer
-local Character = LP.Character or LP.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local HRP = Character:WaitForChild("HumanoidRootPart")
-local Backpack = LP:WaitForChild("Backpack")
+
+local LP  = Players.LocalPlayer
+local Char = LP.Character or LP.CharacterAdded:Wait()
+local HRP  = Char:WaitForChild("HumanoidRootPart")
 local PlayerGui = LP:WaitForChild("PlayerGui")
+
 local PetsService = RS:WaitForChild("GameEvents"):WaitForChild("PetsService")
 
 -- ===== TIỆN ÍCH =====
-local function nameMatch(toolName, keyword)
-    return string.find(string.lower(toolName or ""), string.lower(keyword or ""), 1, true) ~= nil
-end
+local function remoteDropCFrame(i, total)
+    local cfg  = getgenv().CFG
+    local base = HRP.CFrame * CFrame.new(0, 0, -cfg.REMOTE_AHEAD_STUDS)
+    local y    = HRP.Position.Y
 
-local function equipTool(tool)
-    pcall(function() Humanoid:EquipTool(tool) end)
-    tool.Parent = Character
-    task.wait(0.02)
-end
-
-local function toolTryActivate(tool)
-    if getgenv().CFG.TRY_ACTIVATE and tool and tool:IsA("Tool") then
-        pcall(function() tool:Activate() end)
+    if total <= 1 then
+        return CFrame.new(base.X, y, base.Z)
     end
-    if getgenv().CFG.TRY_FIRE_REMOTE_CHILDREN and tool then
-        for _,child in ipairs(tool:GetDescendants()) do
-            if child.ClassName == "RemoteEvent" then
-                local pos = HRP.Position + HRP.CFrame.LookVector * getgenv().CFG.CLICK_FORWARD_STUDS
-                pcall(function() child:FireServer(pos) end)
-            end
-        end
-    end
+
+    local a = (i / total) * math.pi * 2
+    local j = (math.random() * 2 - 1) * cfg.REMOTE_SPREAD_JITTER
+    local r = cfg.REMOTE_SPREAD_RADIUS + j
+    local x = math.cos(a) * r
+    local z = math.sin(a) * r
+    return CFrame.new(base.X + x, y, base.Z + z)
 end
 
-local function screenCenter()
-    local cam = workspace.CurrentCamera
-    local vp = cam.ViewportSize
-    return vp.X/2, vp.Y/2
-end
-
-local function tryClickTap()
-    if not getgenv().CFG.TRY_CLICK_TAP then return end
-    local x, y = screenCenter()
-    pcall(function()
-        if UIS.TouchEnabled and not UIS.MouseEnabled then
-            VIM:SendTouchEvent(x, y, 1, true); VIM:SendTouchEvent(x, y, 1, false)
-        else
-            VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
-            VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
-        end
+local function equipPetGUID(guid, cf)
+    return pcall(function()
+        PetsService:FireServer("EquipPet", tostring(guid), cf)
     end)
 end
 
--- ===== THẢ: tất cả tool khớp keyword trong Backpack (không giới hạn) =====
-local function placeAllByKeyword(keyword)
+local function placeByGUIDList(guidList, limitCount)
+    local cfg   = getgenv().CFG
+    local total = limitCount and math.min(limitCount, #guidList) or #guidList
     local placed = 0
-    for _,it in ipairs(Backpack:GetChildren()) do
-        if it:IsA("Tool") and nameMatch(it.Name, keyword) then
-            equipTool(it)
-            -- Thực hiện 5 lần click để tránh lag
-            for i=1,5 do
-                toolTryActivate(it)
-                tryClickTap()
-                task.wait(0.02)
-            end
-            placed += 1
-            task.wait(0.02)
-        end
+    for i, g in ipairs(guidList) do
+        if limitCount and placed >= limitCount then break end
+        local ok = equipPetGUID(g, remoteDropCFrame(i, total))
+        if ok then placed += 1 end
+        task.wait(cfg.REMOTE_PER_DELAY)
     end
     return placed
 end
 
--- API chung: nếu có limitCount thì giới hạn, không thì thả hết
-local function placeByKeywordFast(keyword, limitCount)
-    if not limitCount then
-        return placeAllByKeyword(keyword)
-    end
-    local placed = 0
-    for _,it in ipairs(Backpack:GetChildren()) do
-        if it:IsA("Tool") and nameMatch(it.Name, keyword) then
-            equipTool(it)
-            -- Thực hiện 5 lần click để tránh lag
-            for i=1,5 do
-                toolTryActivate(it)
-                tryClickTap()
-                task.wait(0.02)
-            end
-            placed += 1
-            if placed >= limitCount then break end
-        end
-    end
-    return placed
-end
-
--- ===== THU PET THEO GUID =====
-local function recallByGUIDs()
-    for _,guid in ipairs(PET_GUIDS) do
+local function recallList(list)
+    for _, g in ipairs(list) do
         pcall(function()
-            PetsService:FireServer("UnequipPet", guid)
+            PetsService:FireServer("UnequipPet", tostring(g))
         end)
-        task.wait(0.06)
+        task.wait(getgenv().CFG.RECALL_PER_DELAY)
     end
 end
 
--- ===== HUD MINI (TRICERATOPS TIMER) =====
+local function buildRecallAll()
+    local seen, out = {}, {}
+    local function add(list)
+        for _, g in ipairs(list or {}) do
+            if not seen[g] then seen[g] = true; table.insert(out, g) end
+        end
+    end
+    add(getgenv().TRI_GUIDS)
+    add(getgenv().MOON_GUIDS)
+    add(getgenv().EXTRA_GUIDS)
+    return out
+end
+
+-- API thả/thu
+local function DropTri(limitCount) return placeByGUIDList(getgenv().TRI_GUIDS,  limitCount or 1) end
+local function DropMoon()          return placeByGUIDList(getgenv().MOON_GUIDS, nil)            end
+local function RecallTri()         return recallList(getgenv().TRI_GUIDS)                       end
+local function RecallMoon()        return recallList(getgenv().MOON_GUIDS)                      end
+local function RecallAll()         return recallList(buildRecallAll())                          end
+
+-- ===== HUD MINI (Đồng hồ Triceratops) =====
 local function createMiniTimer()
     local f = Instance.new("Frame")
     f.Size = UDim2.fromOffset(170, 74)
     f.Position = UDim2.fromOffset(16, 120)
     f.BackgroundColor3 = Color3.fromRGB(40,40,40)
     f.BorderSizePixel = 0
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
+    local corner = Instance.new("UICorner", f)
+    corner.CornerRadius = UDim.new(0,10)
 
     local title = Instance.new("TextLabel", f)
     title.BackgroundTransparency = 1
@@ -203,7 +167,7 @@ local triFrame, triLabel, statusLabel = createMiniTimer()
 triFrame.Parent = sg
 
 local function fmt(sec)
-    if sec<=0 then return "READY" end
+    if sec <= 0 then return "READY" end
     local m = math.floor(sec/60)
     local s = sec%60
     return string.format("%02d:%02d", m, s)
@@ -211,32 +175,34 @@ end
 
 local triDeadline
 RunService.RenderStepped:Connect(function()
-    triLabel.Text = triDeadline and fmt(triDeadline - time()) or "--:--"
+    triLabel.Text = triDeadline and fmt(math.max(0, triDeadline - time())) or "--:--"
 end)
 
 local function setStatus(s) statusLabel.Text = s end
-local function startTriTimer() triDeadline = time() + getgenv().CFG.TRI_INTERVAL_SEC end
+local function startTriTimer()
+    triDeadline = time() + getgenv().CFG.TRI_INTERVAL_SEC
+end
 
--- ===== TRẠNG THÁI AUTO =====
-local autoEnabled, paused, loopThread = false, false, nil
+-- ===== LOOP AUTO =====
+local autoEnabled, paused = false, false
 
 local function doOneCycle()
     if not autoEnabled then return end
-    setStatus("THU pet...")
-    recallByGUIDs()
+    setStatus("THU TẤT CẢ...")
+    RecallAll()
     task.wait(0.3)
 
     if not autoEnabled then return end
-    setStatus("THẢ Triceratops...")
-    local triPlaced = placeByKeywordFast(getgenv().CFG.TRI_KEYWORD, 1)
+    setStatus("THẢ TRICERATOPS (remote)...")
+    local triPlaced = DropTri(1)
     if triPlaced <= 0 then
-        setStatus("Không thấy Tri trong Backpack")
+        setStatus("Không có GUID Triceratops")
         triDeadline = nil
         return
     end
 
     startTriTimer()
-    setStatus("Đang đếm giờ...")
+    setStatus("ĐANG ĐẾM GIỜ...")
 
     local moonDropped = false
     while autoEnabled and triDeadline and (triDeadline - time()) > 0 do
@@ -249,15 +215,15 @@ local function doOneCycle()
 
         local left = triDeadline - time()
         if (not moonDropped) and left <= getgenv().CFG.START_MOON_AT_LEFT then
-            setStatus("THẢ HẾT Moon Cat...")
-            placeByKeywordFast(getgenv().CFG.MOON_KEYWORD)
+            setStatus("THẢ MOON CAT (remote)...")
+            DropMoon()
             moonDropped = true
         end
         task.wait(0.05)
     end
 
     if not autoEnabled then return end
-    setStatus("Hết giờ → chờ ".. tostring(getgenv().CFG.LOOP_COOLDOWN_SEC) .."s")
+    setStatus("HẾT GIỜ → CHỜ " .. tostring(getgenv().CFG.LOOP_COOLDOWN_SEC) .. "s")
     triDeadline = nil
     local t0 = time()
     while autoEnabled and time() - t0 < getgenv().CFG.LOOP_COOLDOWN_SEC do
@@ -286,14 +252,13 @@ local function safeStopLoop()
     setStatus("ĐÃ DỪNG TOÀN BỘ")
 end
 
--- ===== UI TỐI GIẢN KHÔNG NỀN =====
+-- ===== UI TỐI GIẢN =====
 local function createSimpleUI()
-    local sg = Instance.new("ScreenGui", PlayerGui)
-    sg.Name = "SimpleAutoUI"
-    sg.ResetOnSpawn = false
-    
-    -- Nút bắt đầu / dừng auto
-    local btn = Instance.new("TextButton", sg)
+    local sg2 = Instance.new("ScreenGui", PlayerGui)
+    sg2.Name = "SimpleAutoUI"
+    sg2.ResetOnSpawn = false
+
+    local btn = Instance.new("TextButton", sg2)
     btn.Size = UDim2.new(0, 150, 0, 40)
     btn.Position = UDim2.new(0, 20, 0, 20)
     btn.BackgroundColor3 = Color3.fromRGB(70,70,70)
@@ -301,10 +266,10 @@ local function createSimpleUI()
     btn.TextColor3 = Color3.fromRGB(255,255,255)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 14
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    local c1 = Instance.new("UICorner", btn)
+    c1.CornerRadius = UDim.new(0, 8)
 
-    -- Nút dừng mọi hoạt động
-    local btnStop = Instance.new("TextButton", sg)
+    local btnStop = Instance.new("TextButton", sg2)
     btnStop.Size = UDim2.new(0, 150, 0, 40)
     btnStop.Position = UDim2.new(0, 20, 0, 70)
     btnStop.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
@@ -312,32 +277,25 @@ local function createSimpleUI()
     btnStop.TextColor3 = Color3.fromRGB(255,255,255)
     btnStop.Font = Enum.Font.GothamBold
     btnStop.TextSize = 14
-    Instance.new("UICorner", btnStop).CornerRadius = UDim.new(0, 8)
+    local c2 = Instance.new("UICorner", btnStop)
+    c2.CornerRadius = UDim.new(0, 8)
 
-    -- Chức năng toggle bắt đầu/tạm dừng auto
-    local function toggleAuto()
+    btn.MouseButton1Click:Connect(function()
         if autoEnabled then
             safeStopLoop()
             btn.Text = "BẮT ĐẦU AUTO"
         else
-            autoEnabled = true
-            paused = false
+            autoEnabled = true; paused = false
             btn.Text = "ĐANG AUTO..."
             task.spawn(runLoop)
         end
-    end
-    btn.MouseButton1Click:Connect(toggleAuto)
+    end)
 
-    -- Chức năng dừng mọi hoạt động
     btnStop.MouseButton1Click:Connect(function()
         safeStopLoop()
-        -- Reset nút toggle về trạng thái ban đầu
         btn.Text = "BẮT ĐẦU AUTO"
     end)
 end
 
--- Khởi tạo UI
 createSimpleUI()
-
--- Lời kết
-print("[TriTimer] AUTO LOOP – UI đơn giản, không nền, dễ nhìn, không che phần hiển thị thời gian.")
+print("[AutoPet] Remote-only drop/recall | Tri timer + Moon auto-drop | No clicks, no tools.")
