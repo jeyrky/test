@@ -35,7 +35,6 @@ getgenv().MOON_GUIDS = {
     "{a4d899b1-8fea-4636-a3e4-ba61a5c30e1f}",
     "{899f5d26-36f0-40e2-9e8e-bccc7ac12c14}",
 }
-}
 -- (tuỳ chọn) GUID khác muốn recall chung:
 getgenv().EXTRA_GUIDS = { }
 
