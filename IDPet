@@ -1,0 +1,131 @@
+-- 🧩 UNEQUIP → AUTO COPY + DANH SÁCH GUID (8 dòng hiển thị)
+-- Hiển thị tối đa 8 pet không bị ẩn, auto copy khi thu
+
+local Players = game:GetService("Players")
+local RS      = game:GetService("ReplicatedStorage")
+local SG      = game:GetService("StarterGui")
+local LP      = Players.LocalPlayer
+local PetsService = RS:WaitForChild("GameEvents"):WaitForChild("PetsService")
+
+-- ========= tiện ích =========
+local function safeClipboard(s)
+    if typeof(s) ~= "string" then s = tostring(s) end
+    if setclipboard then setclipboard(s)
+    elseif toclipboard then toclipboard(s)
+    else warn("[GUID] Executor không hỗ trợ clipboard") end
+end
+
+local function toast(t1, t2, dur)
+    pcall(function()
+        SG:SetCore("SendNotification", { Title = t1 or "Pet GUID", Text = t2 or "", Duration = dur or 3 })
+    end)
+end
+
+local function cleanGuid(s)
+    return (tostring(s):gsub("[{}]", ""))
+end
+
+-- ========= GUI =========
+local gui = Instance.new("ScreenGui")
+gui.Name = "GUIDListSniffer"
+gui.ResetOnSpawn = false
+gui.Parent = LP:WaitForChild("PlayerGui")
+
+-- Chiều cao tính: (28px dòng * 8) + (7px padding * 7) + header & margin (~50) = ~ 290px
+local root = Instance.new("Frame")
+root.Size = UDim2.fromOffset(380, 290)
+root.Position = UDim2.new(0, 10, 1, -300)
+root.BackgroundColor3 = Color3.fromRGB(24,24,24)
+root.BackgroundTransparency = 0.15
+root.BorderSizePixel = 0
+root.Parent = gui
+Instance.new("UICorner", root).CornerRadius = UDim.new(0,10)
+
+local header = Instance.new("TextLabel")
+header.BackgroundTransparency = 1
+header.Size = UDim2.new(1, -12, 0, 26)
+header.Position = UDim2.new(0, 8, 0, 6)
+header.Font = Enum.Font.GothamBold
+header.TextSize = 14
+header.TextXAlignment = Enum.TextXAlignment.Left
+header.TextColor3 = Color3.fromRGB(255,255,255)
+header.Text = "Unequip GUID (ấn vào dòng để copy lại)"
+header.Parent = root
+
+local sc = Instance.new("ScrollingFrame")
+sc.Size = UDim2.new(1, -16, 1, -46)
+sc.Position = UDim2.new(0, 8, 0, 38)
+sc.BackgroundTransparency = 1
+sc.BorderSizePixel = 0
+sc.ScrollBarThickness = 6
+sc.CanvasSize = UDim2.new(0,0,0,0)
+sc.Parent = root
+
+local layout = Instance.new("UIListLayout")
+layout.FillDirection = Enum.FillDirection.Vertical
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding = UDim.new(0, 7)
+layout.Parent = sc
+
+local function addRow(guidStr)
+    local row = Instance.new("TextButton")
+    row.AutoButtonColor = true
+    row.Size = UDim2.new(1, -6, 0, 28)
+    row.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    row.BorderSizePixel = 0
+    row.TextColor3 = Color3.fromRGB(220,220,220)
+    row.Font = Enum.Font.Code
+    row.TextSize = 12
+    row.TextXAlignment = Enum.TextXAlignment.Left
+    row.Text = "  " .. guidStr
+    row.Parent = sc
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0,6)
+
+    row.MouseButton1Click:Connect(function()
+        safeClipboard(guidStr)
+        toast("Đã copy GUID", guidStr, 2)
+    end)
+
+    -- cập nhật canvas
+    task.defer(function()
+        sc.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 8)
+        if layout.AbsoluteContentSize.Y > sc.AbsoluteWindowSize.Y then
+            sc.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y - sc.AbsoluteWindowSize.Y)
+        end
+    end)
+end
+
+-- Dòng trạng thái nhỏ
+local status = Instance.new("TextLabel")
+status.BackgroundTransparency = 1
+status.Size = UDim2.new(1, -12, 0, 16)
+status.Position = UDim2.new(0, 8, 1, -18)
+status.Font = Enum.Font.Gotham
+status.TextSize = 12
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.TextColor3 = Color3.fromRGB(210,210,210)
+status.Text = "Chờ thu pet…"
+status.Parent = root
+
+-- ========= HOOK =========
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = { ... }
+
+    if self == PetsService and method == "FireServer" and not checkcaller() then
+        if args[1] == "UnequipPet" and typeof(args[2]) == "string" then
+            local guid = cleanGuid(args[2])
+            safeClipboard(guid)
+            toast("Đã copy GUID", guid, 2)
+            addRow(guid)
+            status.Text = "Đã bắt: " .. guid
+            print("[GUID] UnequipPet -> "..guid)
+        end
+    end
+
+    return oldNamecall(self, ...)
+end))
+
+toast("GUID list bật", "Thu pet sẽ auto copy + thêm vào danh sách", 4)
