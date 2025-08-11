@@ -1,11 +1,3 @@
---[[  GROW A GARDEN – AUTO LOOP (Recall -> Drop -> Wait 15s -> Repeat)
-    • Luồng: THU → THẢ (Tri + Moon ở mốc) → HẾT GIỜ → CHỜ 15s → LẶP
-    • HUD: chỉ đồng hồ Triceratops
-    • Menu: màu xám, có thanh tiêu đề & nút "-" ẩn/hiện
-    • Nút: BẮT ĐẦU AUTO, TẠM DỪNG/TIẾP TỤC, THẢ THỦ CÔNG, THU THỦ CÔNG, DỪNG HOÀN TOÀN
-    • Thả Moon: THẢ HẾT (không giới hạn)
-]]
-
 -- ===== CẤU HÌNH =====
 getgenv().CFG = {
     TRI_KEYWORD               = "Triceratops",
@@ -22,7 +14,7 @@ getgenv().CFG = {
     LOOP_COOLDOWN_SEC         = 15,         -- chờ 15s sau khi TRI hết giờ
 }
 
--- Danh sách GUID pet cần thu lại
+-- Danh sách GUID cần recall (đã gộp tất cả)
 local PET_GUIDS = {
     "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
     "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
@@ -31,8 +23,18 @@ local PET_GUIDS = {
     "{2c871dfe-58d9-4a92-9993-939d2c41f0c9}",
     "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
     "{ab1786d6-7437-426f-b2ba-e144e82c7cab}",
-    "{24eeef51-7e6a-46e6-8f01-fc23859cbfea}"
+    "{24eeef51-7e6a-46e6-8f01-fc23859cbfea}",
+
+    -- GUID mới thêm
+    "{899f5d26-36f0-40e2-9e8e-bccc7ac12c14}",
+    "{a4d899b1-8fea-4636-a3e4-ba61a5c30e1f}",
+    "{8008570e-dcbf-4792-acc8-3d5ebcf4dc3e}",
+    "{a19d7489-37bd-4b93-b154-3fab4abf3a58}",
+    "{7d7e4389-04ca-43df-938a-22e72690b57e}",
+    "{820c7557-eb2f-4788-8612-b0646075704d}",
+    "{502845bc-ea6b-4c49-bf73-119c096925ca}",
 }
+
 
 -- ===== DỊCH VỤ =====
 local Players = game:GetService("Players")
@@ -40,7 +42,6 @@ local UIS = game:GetService("UserInputService")
 local VIM = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
 local RS = game:GetService("ReplicatedStorage")
-
 local LP = Players.LocalPlayer
 local Character = LP.Character or LP.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
@@ -99,10 +100,14 @@ local function placeAllByKeyword(keyword)
     for _,it in ipairs(Backpack:GetChildren()) do
         if it:IsA("Tool") and nameMatch(it.Name, keyword) then
             equipTool(it)
-            toolTryActivate(it)
-            tryClickTap()
+            -- Thực hiện 5 lần click để tránh lag
+            for i=1,5 do
+                toolTryActivate(it)
+                tryClickTap()
+                task.wait(0.02)
+            end
             placed += 1
-            task.wait(0.02) -- nhỏ để tránh nghẽn
+            task.wait(0.02)
         end
     end
     return placed
@@ -116,10 +121,15 @@ local function placeByKeywordFast(keyword, limitCount)
     local placed = 0
     for _,it in ipairs(Backpack:GetChildren()) do
         if it:IsA("Tool") and nameMatch(it.Name, keyword) then
-            equipTool(it); toolTryActivate(it); tryClickTap()
+            equipTool(it)
+            -- Thực hiện 5 lần click để tránh lag
+            for i=1,5 do
+                toolTryActivate(it)
+                tryClickTap()
+                task.wait(0.02)
+            end
             placed += 1
             if placed >= limitCount then break end
-            task.wait(0.02)
         end
     end
     return placed
@@ -202,7 +212,6 @@ local function startTriTimer() triDeadline = time() + getgenv().CFG.TRI_INTERVAL
 -- ===== TRẠNG THÁI AUTO =====
 local autoEnabled, paused, loopThread = false, false, nil
 
--- 1 CHU KỲ: THU → THẢ TRI → chờ mốc để THẢ HẾT MOON → chờ TRI hết → cooldown 15s
 local function doOneCycle()
     if not autoEnabled then return end
     setStatus("THU pet...")
@@ -233,7 +242,7 @@ local function doOneCycle()
         local left = triDeadline - time()
         if (not moonDropped) and left <= getgenv().CFG.START_MOON_AT_LEFT then
             setStatus("THẢ HẾT Moon Cat...")
-            placeByKeywordFast(getgenv().CFG.MOON_KEYWORD) -- KHÔNG GIỚI HẠN
+            placeByKeywordFast(getgenv().CFG.MOON_KEYWORD)
             moonDropped = true
         end
         task.wait(0.05)
@@ -269,130 +278,58 @@ local function safeStopLoop()
     setStatus("ĐÃ DỪNG TOÀN BỘ")
 end
 
--- ===== UI MENU XÁM + TIÊU ĐỀ & NÚT "-" ẨN/HIỆN =====
-local dock = Instance.new("Frame", sg)
-dock.AnchorPoint = Vector2.new(1,1)
-dock.Position = UDim2.new(1, -16, 1, -120)
-dock.Size = UDim2.fromOffset(220, 220)
-dock.BackgroundColor3 = Color3.fromRGB(50,50,50) -- xám đồng nhất
-dock.BorderSizePixel = 0
-Instance.new("UICorner", dock).CornerRadius = UDim.new(0,14)
+-- ===== UI TỐI GIẢN KHÔNG NỀN =====
+local function createSimpleUI()
+    local sg = Instance.new("ScreenGui", PlayerGui)
+    sg.Name = "SimpleAutoUI"
+    sg.ResetOnSpawn = false
+    
+    -- Nút bắt đầu / dừng auto
+    local btn = Instance.new("TextButton", sg)
+    btn.Size = UDim2.new(0, 150, 0, 40)
+    btn.Position = UDim2.new(0, 20, 0, 20)
+    btn.BackgroundColor3 = Color3.fromRGB(70,70,70)
+    btn.Text = "BẮT ĐẦU AUTO"
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
 
--- Thanh tiêu đề
-local titleBar = Instance.new("Frame", dock)
-titleBar.Size = UDim2.new(1,0,0,28)
-titleBar.BackgroundColor3 = Color3.fromRGB(40,40,40)
-titleBar.BorderSizePixel = 0
-Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0,14)
+    -- Nút dừng mọi hoạt động
+    local btnStop = Instance.new("TextButton", sg)
+    btnStop.Size = UDim2.new(0, 150, 0, 40)
+    btnStop.Position = UDim2.new(0, 20, 0, 70)
+    btnStop.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+    btnStop.Text = "DỪNG MỌI HOẠT ĐỘNG"
+    btnStop.TextColor3 = Color3.fromRGB(255,255,255)
+    btnStop.Font = Enum.Font.GothamBold
+    btnStop.TextSize = 14
+    Instance.new("UICorner", btnStop).CornerRadius = UDim.new(0, 8)
 
-local titleLabel = Instance.new("TextLabel", titleBar)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Size = UDim2.new(1,-28,1,0)
-titleLabel.Position = UDim2.new(0,8,0,0)
-titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 14
-titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Text = "AUTO MENU"
+    -- Chức năng toggle bắt đầu/tạm dừng auto
+    local function toggleAuto()
+        if autoEnabled then
+            safeStopLoop()
+            btn.Text = "BẮT ĐẦU AUTO"
+        else
+            autoEnabled = true
+            paused = false
+            btn.Text = "ĐANG AUTO..."
+            task.spawn(runLoop)
+        end
+    end
+    btn.MouseButton1Click:Connect(toggleAuto)
 
-local btnToggle = Instance.new("TextButton", titleBar)
-btnToggle.Size = UDim2.fromOffset(20,20)
-btnToggle.Position = UDim2.new(1,-24,0.5,-10)
-btnToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
-btnToggle.Text = "-"
-btnToggle.TextColor3 = Color3.fromRGB(255,255,255)
-btnToggle.Font = Enum.Font.GothamBold
-btnToggle.TextSize = 14
-Instance.new("UICorner", btnToggle).CornerRadius = UDim.new(0,6)
-
-local content = Instance.new("Frame", dock)
-content.Size = UDim2.new(1,0,1,-28)
-content.Position = UDim2.new(0,0,0,28)
-content.BackgroundTransparency = 1
-
-local vlist = Instance.new("UIListLayout", content)
-vlist.Padding = UDim.new(0,8)
-vlist.HorizontalAlignment = Enum.HorizontalAlignment.Center
-vlist.VerticalAlignment = Enum.VerticalAlignment.Top
-
-btnToggle.MouseButton1Click:Connect(function()
-    content.Visible = not content.Visible
-    btnToggle.Text = content.Visible and "-" or "+"
-end)
-
--- ===== NÚT =====
-local function mkBtn(txt)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1,-16,0,36)
-    b.Text = txt
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 15
-    b.TextColor3 = Color3.fromRGB(255,255,255)
-    b.BackgroundColor3 = Color3.fromRGB(80,80,80) -- xám
-    b.BorderSizePixel = 0
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0,10)
-    b.Parent = content
-    return b
+    -- Chức năng dừng mọi hoạt động
+    btnStop.MouseButton1Click:Connect(function()
+        safeStopLoop()
+        -- Reset nút toggle về trạng thái ban đầu
+        btn.Text = "BẮT ĐẦU AUTO"
+    end)
 end
 
-local btnAuto   = mkBtn("BẮT ĐẦU AUTO")
-local btnPause  = mkBtn("TẠM DỪNG / TIẾP TỤC")
-local btnDrop   = mkBtn("THẢ THỦ CÔNG")
-local btnRecall = mkBtn("THU THỦ CÔNG")
-local btnStop   = mkBtn("DỪNG HOÀN TOÀN")
+-- Khởi tạo UI
+createSimpleUI()
 
--- ===== GÁN HÀNH ĐỘNG =====
-btnAuto.MouseButton1Click:Connect(function()
-    if autoEnabled then
-        safeStopLoop()
-        btnAuto.Text = "BẮT ĐẦU AUTO"
-        return
-    end
-    autoEnabled = true
-    paused = false
-    btnAuto.Text = "ĐANG AUTO..."
-    setStatus("BẮT ĐẦU AUTO")
-    loopThread = task.spawn(runLoop)
-end)
-
-btnPause.MouseButton1Click:Connect(function()
-    if not autoEnabled then setStatus("AUTO chưa bật"); return end
-    paused = not paused
-    btnPause.Text = paused and "TIẾP TỤC" or "TẠM DỪNG / TIẾP TỤC"
-    setStatus(paused and "ĐÃ TẠM DỪNG" or "TIẾP TỤC")
-end)
-
-btnDrop.MouseButton1Click:Connect(function()
-    if autoEnabled then return end
-    setStatus("THẢ Tri + HẾT Moon (thủ công)")
-    local triPlaced = placeByKeywordFast(getgenv().CFG.TRI_KEYWORD, 1)
-    if triPlaced > 0 then
-        triDeadline = time() + getgenv().CFG.TRI_INTERVAL_SEC
-    end
-    task.spawn(function()
-        while triDeadline and (triDeadline - time()) > 0 do
-            local left = triDeadline - time()
-            if left <= getgenv().CFG.START_MOON_AT_LEFT then
-                placeByKeywordFast(getgenv().CFG.MOON_KEYWORD) -- KHÔNG GIỚI HẠN
-                break
-            end
-            task.wait(0.05)
-        end
-        setStatus("IDLE")
-    end)
-end)
-
-btnRecall.MouseButton1Click:Connect(function()
-    if autoEnabled then return end
-    setStatus("THU pet (thủ công)")
-    recallByGUIDs()
-    triDeadline = nil
-    setStatus("IDLE")
-end)
-
-btnStop.MouseButton1Click:Connect(function()
-    safeStopLoop()
-    btnAuto.Text = "BẮT ĐẦU AUTO"
-end)
-
-print("[TriTimer] AUTO LOOP – Gray UI + toggle, STOP stops all, drop ALL Moon at marker.")
+-- Lời kết
+print("[TriTimer] AUTO LOOP – UI đơn giản, không nền, dễ nhìn, không che phần hiển thị thời gian.")
