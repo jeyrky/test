@@ -1,11 +1,4 @@
---[[
-GROW A GARDEN – AUTO DROP/RECALL (REMOTE-ONLY, NO CLICK)
-• THẢ/THU 100% bằng PetsService:FireServer (EquipPet / UnequipPet)
-• Tách GUID: Triceratops / Moon Cat
-• Gom tụ: thả theo vòng tròn nhỏ ngay trước mặt
-• HUD: đếm giờ Triceratops (3:33), tự thả Moon khi còn 1:15
-• UI: BẮT ĐẦU AUTO / DỪNG MỌI HOẠT ĐỘNG
-]]
+--[[  GROW A GARDEN – AUTO DROP/RECALL (REMOTE-ONLY, NO CLICK)  ]]
 
 -- ===== CẤU HÌNH =====
 getgenv().CFG = {
@@ -13,25 +6,22 @@ getgenv().CFG = {
     START_MOON_AT_LEFT   = 75,         -- giây còn lại của Tri để thả Moon (1:15)
 
     -- Vị trí thả (gom tụ)
-    REMOTE_AHEAD_STUDS   = 6,
-    REMOTE_SPREAD_RADIUS = 1.2,
-    REMOTE_SPREAD_JITTER = 0.35,
-    REMOTE_PER_DELAY     = 0.06,
+    REMOTE_AHEAD_STUDS   = 6,          -- thả trước mặt bao nhiêu studs
+    REMOTE_SPREAD_RADIUS = 1.2,        -- bán kính cụm (nhỏ = tụ chặt)
+    REMOTE_SPREAD_JITTER = 0.35,       -- rung nhẹ tránh overlap
+    REMOTE_PER_DELAY     = 0.06,       -- delay giữa mỗi lần thả (giây)
 
     -- Recall
-    RECALL_PER_DELAY     = 0.06,
+    RECALL_PER_DELAY     = 0.06,       -- delay giữa mỗi lần Unequip (giây)
 
-    LOOP_COOLDOWN_SEC    = 15,
+    LOOP_COOLDOWN_SEC    = 15,         -- chờ sau mỗi vòng
 }
 
--- ===== GUID TẠI ĐÂY =====
+-- ===== ĐIỀN GUID TẠI ĐÂY =====
 getgenv().TRI_GUIDS = {
-    "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
     "{a73a4332-1d09-45ad-9634-55065ef19403}",
-    "{502845bc-ea6b-4c49-bf73-119c096925ca}",
 }
 getgenv().MOON_GUIDS = {
-    -- danh sách GUID Moon
     "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
     "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
     "{31ee4294-0d7c-4993-813f-2ca605226f39}",
@@ -45,31 +35,40 @@ getgenv().MOON_GUIDS = {
     "{a6ec3033-d086-4630-8deb-afcf83d59ac4}",
     "{0305b311-1b64-4f63-8ecf-e1e1cbb772ea}",
     "{558c6035-2b22-40f1-a969-48fb9cf43a67}",
-    "{781b17ee-ecd4-42a7-b0dc-d49f3f156a2e}"
+    "{781b17ee-ecd4-42a7-b0dc-d49f3f156a2e}",
 }
--- GUID khác muốn recall chung
-getgenv().EXTRA_GUIDS = {}
+getgenv().EXTRA_GUIDS = { }
 
 -- ===== DỊCH VỤ =====
-local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local Players   = game:GetService("Players")
+local RS        = game:GetService("ReplicatedStorage")
+local RunService= game:GetService("RunService")
 
-local LP = Players.LocalPlayer
+local LP   = Players.LocalPlayer
 local Char = LP.Character or LP.CharacterAdded:Wait()
-local HRP = Char:WaitForChild("HumanoidRootPart")
+local HRP  = Char:WaitForChild("HumanoidRootPart")
 local PlayerGui = LP:WaitForChild("PlayerGui")
 
-local PetsService = RS:WaitForChild("GameEvents"):WaitForChild("PetsService")
+-- Chờ có PetsService (tránh treo vô hạn)
+local GameEvents = RS:FindFirstChild("GameEvents") or RS
+local PetsService = GameEvents:FindFirstChild("PetsService") or GameEvents:FindFirstChild("Pets")
+if not PetsService then
+    PetsService = (RS:WaitForChild("GameEvents", 10) or RS):WaitForChild("PetsService", 10)
+    if not PetsService then
+        warn("[AutoPet] Không tìm thấy PetsService. Kiểm tra cây ReplicatedStorage/GameEvents.")
+        return
+    end
+end
 
 -- ===== TIỆN ÍCH =====
 local function remoteDropCFrame(i, total)
-    local cfg = getgenv().CFG
+    local cfg  = getgenv().CFG
     local base = HRP.CFrame * CFrame.new(0, 0, -cfg.REMOTE_AHEAD_STUDS)
-    local y = HRP.Position.Y
+    local basePos = base.Position
+    local y    = basePos.Y
 
     if total <= 1 then
-        return CFrame.new(base.X, y, base.Z)
+        return CFrame.new(basePos.X, y, basePos.Z)
     end
 
     local a = (i / total) * math.pi * 2
@@ -77,61 +76,30 @@ local function remoteDropCFrame(i, total)
     local r = cfg.REMOTE_SPREAD_RADIUS + j
     local x = math.cos(a) * r
     local z = math.sin(a) * r
-    return CFrame.new(base.X + x, y, base.Z + z)
+    return CFrame.new(basePos.X + x, y, basePos.Z + z)
 end
 
 local function equipPetGUID(guid, cf)
-    local success, err = pcall(function()
+    return pcall(function()
         PetsService:FireServer("EquipPet", tostring(guid), cf)
     end)
-    return success
 end
 
 local function placeByGUIDList(guidList, limitCount)
-    local cfg = getgenv().CFG
-    local total = limitCount and math.min(limitCount, #guidList) or #guidList
+    local cfg    = getgenv().CFG
+    local total  = limitCount and math.min(limitCount, #guidList) or #guidList
     local placed = 0
     for i, g in ipairs(guidList) do
         if limitCount and placed >= limitCount then break end
-        -- Chỉ thả những GUID chưa có trong danh sách GUID đã có
-        local guidStr = tostring(g)
-        -- Kiểm tra xem guid này đã có trong danh sách GUID của GUID đã thả chưa
-        -- Nếu GUID này đã có, bỏ qua (không thả nữa)
-        local alreadyHave = false
-        for _, existGuid in ipairs(getgenv().TRI_GUIDS) do
-            if tostring(existGuid) == guidStr then
-                alreadyHave = true
-                break
-            end
-        end
-        for _, existGuid in ipairs(getgenv().MOON_GUIDS) do
-            if tostring(existGuid) == guidStr then
-                alreadyHave = true
-                break
-            end
-        end
-        for _, existGuid in ipairs(getgenv().EXTRA_GUIDS) do
-            if tostring(existGuid) == guidStr then
-                alreadyHave = true
-                break
-            end
-        end
-        if alreadyHave then
-            -- Đã có, không thả nữa
-            continue
-        end
-
         local ok = equipPetGUID(g, remoteDropCFrame(i, total))
-        if ok then
-            placed = placed + 1
-        end
+        if ok then placed = placed + 1 end  -- ✅ Lua không có +=
         task.wait(cfg.REMOTE_PER_DELAY)
     end
     return placed
 end
 
 local function recallList(list)
-    for _, g in ipairs(list) do
+    for _, g in ipairs(list or {}) do
         pcall(function()
             PetsService:FireServer("UnequipPet", tostring(g))
         end)
@@ -152,14 +120,14 @@ local function buildRecallAll()
     return out
 end
 
--- API
-local function DropTri(limitCount) return placeByGUIDList(getgenv().TRI_GUIDS, limitCount or 1) end
-local function DropMoon()          return placeByGUIDList(getgenv().MOON_GUIDS, nil) end
-local function RecallTri()         return recallList(getgenv().TRI_GUIDS) end
-local function RecallMoon()        return recallList(getgenv().MOON_GUIDS) end
-local function RecallAll()         return recallList(buildRecallAll()) end
+-- API thả/thu
+local function DropTri(limitCount) return placeByGUIDList(getgenv().TRI_GUIDS,  limitCount or 1) end
+local function DropMoon()          return placeByGUIDList(getgenv().MOON_GUIDS, nil)            end
+local function RecallTri()         return recallList(getgenv().TRI_GUIDS)                       end
+local function RecallMoon()        return recallList(getgenv().MOON_GUIDS)                      end
+local function RecallAll()         return recallList(buildRecallAll())                          end
 
--- ===== HUD =====
+-- ===== HUD MINI (Đồng hồ Triceratops) =====
 local function createMiniTimer()
     local f = Instance.new("Frame")
     f.Size = UDim2.fromOffset(170, 74)
@@ -202,17 +170,18 @@ local function createMiniTimer()
     return f, t, status
 end
 
-local PlayerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui")
-local sg = Instance.new("ScreenGui", PlayerGui)
+local sg = Instance.new("ScreenGui")
 sg.Name = "TriPetTimerUI"
 sg.ResetOnSpawn = false
+sg.Parent = PlayerGui
+
 local triFrame, triLabel, statusLabel = createMiniTimer()
 triFrame.Parent = sg
 
 local function fmt(sec)
     if sec <= 0 then return "READY" end
     local m = math.floor(sec/60)
-    local s = sec%60
+    local s = math.floor(sec%60)  -- nhẹ nhàng ép về int
     return string.format("%02d:%02d", m, s)
 end
 
@@ -226,7 +195,7 @@ local function startTriTimer()
     triDeadline = time() + getgenv().CFG.TRI_INTERVAL_SEC
 end
 
--- ===== AUTO LOOP =====
+-- ===== LOOP AUTO =====
 local autoEnabled, paused = false, false
 
 local function doOneCycle()
@@ -295,11 +264,12 @@ local function safeStopLoop()
     setStatus("ĐÃ DỪNG TOÀN BỘ")
 end
 
--- ===== UI =====
+-- ===== UI TỐI GIẢN =====
 local function createSimpleUI()
-    local sg2 = Instance.new("ScreenGui", PlayerGui)
+    local sg2 = Instance.new("ScreenGui")
     sg2.Name = "SimpleAutoUI"
     sg2.ResetOnSpawn = false
+    sg2.Parent = PlayerGui
 
     local btn = Instance.new("TextButton", sg2)
     btn.Size = UDim2.new(0, 150, 0, 40)
@@ -328,8 +298,7 @@ local function createSimpleUI()
             safeStopLoop()
             btn.Text = "BẮT ĐẦU AUTO"
         else
-            autoEnabled = true
-            paused = false
+            autoEnabled = true; paused = false
             btn.Text = "ĐANG AUTO..."
             task.spawn(runLoop)
         end
