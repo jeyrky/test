@@ -25,7 +25,7 @@ getgenv().CFG = {
 
 -- ===== ĐIỀN GUID TẠI ĐÂY =====
 getgenv().TRI_GUIDS = {
-    "{a73a4332-1d09-45ad-9634-55065ef19403}",
+    "{f33c7629-a28f-4338-ad9e-94d188150b18}",
 }
 getgenv().MOON_GUIDS = {
     "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
