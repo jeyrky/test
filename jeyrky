@@ -13,24 +13,25 @@ getgenv().CFG = {
     START_MOON_AT_LEFT   = 75,         -- giây còn lại của Tri để thả Moon (1:15)
 
     -- Vị trí thả (gom tụ)
-    REMOTE_AHEAD_STUDS   = 6,          -- thả trước mặt bao nhiêu studs
-    REMOTE_SPREAD_RADIUS = 1.2,        -- bán kính cụm (nhỏ = tụ chặt)
-    REMOTE_SPREAD_JITTER = 0.35,       -- rung nhẹ tránh overlap
-    REMOTE_PER_DELAY     = 0.06,       -- delay giữa mỗi lần thả (giây)
+    REMOTE_AHEAD_STUDS   = 6,
+    REMOTE_SPREAD_RADIUS = 1.2,
+    REMOTE_SPREAD_JITTER = 0.35,
+    REMOTE_PER_DELAY     = 0.06,
 
     -- Recall
-    RECALL_PER_DELAY     = 0.06,       -- delay giữa mỗi lần Unequip (giây)
+    RECALL_PER_DELAY     = 0.06,
 
-    LOOP_COOLDOWN_SEC    = 15,         -- chờ sau mỗi vòng
+    LOOP_COOLDOWN_SEC    = 15,
 }
 
--- ===== ĐIỀN GUID TẠI ĐÂY =====
+-- ===== GUID TẠI ĐÂY =====
 getgenv().TRI_GUIDS = {
     "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
     "{a73a4332-1d09-45ad-9634-55065ef19403}",
     "{502845bc-ea6b-4c49-bf73-119c096925ca}",
 }
 getgenv().MOON_GUIDS = {
+    -- danh sách GUID Moon
     "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
     "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
     "{31ee4294-0d7c-4993-813f-2ca605226f39}",
@@ -46,7 +47,7 @@ getgenv().MOON_GUIDS = {
     "{558c6035-2b22-40f1-a969-48fb9cf43a67}",
     "{781b17ee-ecd4-42a7-b0dc-d49f3f156a2e}"
 }
--- (tuỳ chọn) GUID khác muốn recall chung:
+-- GUID khác muốn recall chung
 getgenv().EXTRA_GUIDS = {}
 
 -- ===== DỊCH VỤ =====
@@ -92,6 +93,34 @@ local function placeByGUIDList(guidList, limitCount)
     local placed = 0
     for i, g in ipairs(guidList) do
         if limitCount and placed >= limitCount then break end
+        -- Chỉ thả những GUID chưa có trong danh sách GUID đã có
+        local guidStr = tostring(g)
+        -- Kiểm tra xem guid này đã có trong danh sách GUID của GUID đã thả chưa
+        -- Nếu GUID này đã có, bỏ qua (không thả nữa)
+        local alreadyHave = false
+        for _, existGuid in ipairs(getgenv().TRI_GUIDS) do
+            if tostring(existGuid) == guidStr then
+                alreadyHave = true
+                break
+            end
+        end
+        for _, existGuid in ipairs(getgenv().MOON_GUIDS) do
+            if tostring(existGuid) == guidStr then
+                alreadyHave = true
+                break
+            end
+        end
+        for _, existGuid in ipairs(getgenv().EXTRA_GUIDS) do
+            if tostring(existGuid) == guidStr then
+                alreadyHave = true
+                break
+            end
+        end
+        if alreadyHave then
+            -- Đã có, không thả nữa
+            continue
+        end
+
         local ok = equipPetGUID(g, remoteDropCFrame(i, total))
         if ok then
             placed = placed + 1
@@ -123,14 +152,14 @@ local function buildRecallAll()
     return out
 end
 
--- API thả/thu
-local function DropTri(limitCount) return placeByGUIDList(getgenv().TRI_GUIDS,  limitCount or 1) end
-local function DropMoon()          return placeByGUIDList(getgenv().MOON_GUIDS, nil)            end
-local function RecallTri()         return recallList(getgenv().TRI_GUIDS)                       end
-local function RecallMoon()        return recallList(getgenv().MOON_GUIDS)                      end
-local function RecallAll()         return recallList(buildRecallAll())                          end
+-- API
+local function DropTri(limitCount) return placeByGUIDList(getgenv().TRI_GUIDS, limitCount or 1) end
+local function DropMoon()          return placeByGUIDList(getgenv().MOON_GUIDS, nil) end
+local function RecallTri()         return recallList(getgenv().TRI_GUIDS) end
+local function RecallMoon()        return recallList(getgenv().MOON_GUIDS) end
+local function RecallAll()         return recallList(buildRecallAll()) end
 
--- ===== HUD MINI (Đồng hồ Triceratops) =====
+-- ===== HUD =====
 local function createMiniTimer()
     local f = Instance.new("Frame")
     f.Size = UDim2.fromOffset(170, 74)
@@ -173,10 +202,10 @@ local function createMiniTimer()
     return f, t, status
 end
 
+local PlayerGui = game.Players.LocalPlayer:WaitForChild("PlayerGui")
 local sg = Instance.new("ScreenGui", PlayerGui)
 sg.Name = "TriPetTimerUI"
 sg.ResetOnSpawn = false
-
 local triFrame, triLabel, statusLabel = createMiniTimer()
 triFrame.Parent = sg
 
@@ -197,7 +226,7 @@ local function startTriTimer()
     triDeadline = time() + getgenv().CFG.TRI_INTERVAL_SEC
 end
 
--- ===== LOOP AUTO =====
+-- ===== AUTO LOOP =====
 local autoEnabled, paused = false, false
 
 local function doOneCycle()
@@ -266,7 +295,7 @@ local function safeStopLoop()
     setStatus("ĐÃ DỪNG TOÀN BỘ")
 end
 
--- ===== UI TỐI GIẢN =====
+-- ===== UI =====
 local function createSimpleUI()
     local sg2 = Instance.new("ScreenGui", PlayerGui)
     sg2.Name = "SimpleAutoUI"
