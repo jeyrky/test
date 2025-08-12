@@ -25,15 +25,24 @@ getgenv().CFG = {
 
 -- ===== ĐIỀN GUID TẠI ĐÂY =====
 getgenv().TRI_GUIDS = {
-    "{502845bc-ea6b-4c49-bf73-119c096925ca}", 
+    "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}"
+    "{a73a4332-1d09-45ad-9634-55065ef19403}"
 }
 getgenv().MOON_GUIDS = {
-    "{a19d7489-37bd-4b93-b154-3fab4abf3a58}",
-    "{7d7e4389-04ca-43df-938a-22e72690b57e}",
-    "{820c7557-eb2f-4788-8612-b0646075704d}",
-    "{8008570e-dcbf-4792-acc8-3d5ebcf4dc3e}",
-    "{a4d899b1-8fea-4636-a3e4-ba61a5c30e1f}",
-    "{899f5d26-36f0-40e2-9e8e-bccc7ac12c14}",
+    "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
+    "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
+    "{31ee4294-0d7c-4993-813f-2ca605226f39}",
+    "{4220b635-bc02-4cb8-8e86-7959fdd1f06b}",
+    "{2c871dfe-58d9-4a92-9993-939d2c41f0c9}",
+    "{ab1786d6-7437-426f-b2ba-e144e82c7cab}",
+    "{24eeef51-7e6a-46e6-8f01-fc23859cbfea}",
+    "{c3b90c29-633e-40d4-8f12-2fa5ab301fb1}",
+    "{30c3484b-0ac5-4d9e-8c4b-3df3f45c66a7}",
+    "{c14ba42b-9885-4bd1-8d6f-33d79342e94d}",
+    "{a6ec3033-d086-4630-8deb-afcf83d59ac4}",
+    "{0305b311-1b64-4f63-8ecf-e1e1cbb772ea}",
+    "{558c6035-2b22-40f1-a969-48fb9cf43a67}",
+    "{781b17ee-ecd4-42a7-b0dc-d49f3f156a2e}",
 }
 -- (tuỳ chọn) GUID khác muốn recall chung:
 getgenv().EXTRA_GUIDS = { }
