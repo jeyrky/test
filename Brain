@@ -1,364 +1,120 @@
---== GROW A GARDEN • MY-PET FINDER (SAFE MINI PATCH) ==--
+-- ===========================
+-- 🔁 REJOIN ĐÚNG SERVER HIỆN TẠI (PlaceId + JobId)
+-- ===========================
+local TS       = game:GetService("TeleportService")
+local Players  = game:GetService("Players")
+local CoreGui  = game:GetService("CoreGui")
+local lp       = Players.LocalPlayer
+local PLACE_ID = game.PlaceId
+local JOB_ID   = game.JobId
 
--- Services
-local Players = game:GetService("Players")
-local LP      = Players.LocalPlayer
-local CoreGui = game:GetService("CoreGui")
-local SGCore  = game:GetService("StarterGui")
-local HS      = game:GetService("HttpService")
+local REJOINING   = false
+local MAX_RETRIES = 5
 
--- Config
-local RADIUS = 220
-local CAP    = 400
-local ONLY_WITH_ID = true   -- chỉ hiển thị mục có ID
-
-local function notify(t, d)
-    pcall(function() SGCore:SetCore("SendNotification", {Title="My-Pet Finder", Text=t, Duration=d or 3}) end)
-    print("[MyPet] "..t)
-end
-
-local function parentGui()
-    if gethui then local ok,g=pcall(gethui); if ok and g then return g end end
-    return CoreGui
-end
-
-local function getHRP()
-    local c = LP.Character or LP.CharacterAdded:Wait()
-    return c:WaitForChild("HumanoidRootPart")
-end
-
-local function dist(a,b) return (a-b).Magnitude end
-local function short(s, n) s=tostring(s or "") n=n or 22 return (#s>n) and (s:sub(1,n).."…") or s end
-
--- Helpers: read owner/id from Attributes + ValueBase
-local function getAttr(obj, key)
-    local v = obj:GetAttribute(key)
-    if v ~= nil then return v end
-    for _,d in ipairs(obj:GetDescendants()) do
-        if d:IsA("ValueBase") and d.Name:lower()==key:lower() then
-            return d.Value
+local function rejoinSameServer()
+    if REJOINING then return end
+    REJOINING = true
+    -- thử nhiều lần đề phòng Teleport bị fail tạm thời
+    for i = 1, MAX_RETRIES do
+        local ok, err = pcall(function()
+            TS:TeleportToPlaceInstance(PLACE_ID, JOB_ID, lp)
+        end)
+        if ok then
+            return
+        else
+            warn(("[Rejoin] Lần %d/%d lỗi: %s"):format(i, MAX_RETRIES, tostring(err)))
+            task.wait(1 + i*0.5)
         end
     end
-    return nil
+    REJOINING = false
 end
 
-local function anyOwnerMatchesMe(obj)
-    local myName, myId = LP.Name, LP.UserId
-    for _,d in ipairs(obj:GetDescendants()) do
-        if d:IsA("ObjectValue") and d.Name:lower()=="owner" and d.Value then
-            local v = d.Value
-            if v:IsA("Player") and (v==LP or v.Name==myName or v.UserId==myId) then
-                return true, "Owner(ObjectValue)=Player("..v.Name..")"
-            end
+-- ⌨️ Phím nóng: F5 để rejoin ngay
+do
+    local VIM = game:GetService("VirtualInputManager")
+    game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == Enum.KeyCode.F5 then
+            rejoinSameServer()
         end
-    end
-    local ownerName = getAttr(obj, "OwnerName") or getAttr(obj, "PlayerName") or getAttr(obj, "PlotOwner") or getAttr(obj, "GardenOwner")
-    if typeof(ownerName)=="string" and ownerName==myName then
-        return true, "OwnerName="..ownerName
-    end
-    local ownerId = getAttr(obj, "OwnerId") or getAttr(obj, "UserId")
-    if typeof(ownerId)=="number" and ownerId==myId then
-        return true, "OwnerId="..tostring(ownerId)
-    end
-    if typeof(ownerId)=="string" and tostring(ownerId)==tostring(myId) then
-        return true, "OwnerId="..ownerId
-    end
-    return false, nil
+    end)
 end
 
-local function looksLikePetName(n)
-    n=n:lower()
-    return n:find("pet") or n:find("animal") or n:find("companion")
+-- 🖱️ Nút Rejoin góc phải
+do
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "RejoinBtnGui"
+    sg.ResetOnSpawn = false
+    sg.IgnoreGuiInset = true
+    sg.Parent = (gethui and gethui()) or CoreGui
+
+    local btn = Instance.new("TextButton")
+    btn.Name = "RejoinBtn"
+    btn.Size = UDim2.fromOffset(110, 36)
+    btn.Position = UDim2.new(1, -120, 1, -46)
+    btn.AnchorPoint = Vector2.new(0,0)
+    btn.BackgroundColor3 = Color3.fromRGB(25,25,25)
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.TextSize = 16
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = true
+    btn.Text = "⟳ Rejoin (F5)"
+    btn.Parent = sg
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = btn
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(70,70,70)
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = btn
+
+    btn.MouseButton1Click:Connect(rejoinSameServer)
 end
 
-local function extractId(obj)
-    local keys = {"PetId","petId","GUID","Guid","guid","UUID","uuid","Id","ID","id","Token","UID","uid"}
-    for _,k in ipairs(keys) do
-        local v = getAttr(obj, k)
-        if v ~= nil then return tostring(v), k end
-    end
-    for _,d in ipairs(obj:GetDescendants()) do
-        if d:IsA("ValueBase") then
-            local nm = d.Name:lower()
-            if nm=="id" or nm=="guid" or nm=="petid" or nm=="uuid" or nm:find("id") or nm:find("guid") then
-                return tostring(d.Value), d.Name
-            end
-        end
-    end
-    return nil, nil
-end
-
--- Scan (y như bản cũ, chỉ thêm lọc ONLY_WITH_ID)
-local function scanMine()
-    local center = getHRP().Position
-    local results = {}
-    local count = 0
-    for _,obj in ipairs(workspace:GetDescendants()) do
-        if count >= CAP then break end
-        if obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart") then
-            if not (obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid")) then
-                local pos
-                if obj:IsA("Model") then
-                    local pp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-                    pos = pp and pp.Position
-                elseif obj:IsA("BasePart") then
-                    pos = obj.Position
-                end
-                if (RADIUS==0) or (pos and dist(pos, center) <= RADIUS) then
-                    local mine, why = anyOwnerMatchesMe(obj)
-                    local petish = looksLikePetName(obj.Name)
-                    if mine or petish then
-                        local id, idKey = extractId(obj)
-                        if (not ONLY_WITH_ID) or id ~= nil then
-                            table.insert(results, {
-                                ref=obj,
-                                name=obj.Name,
-                                class=obj.ClassName,
-                                reason = mine and ("Mine: "..why) or "Name-like: pet",
-                                id=id, idKey=idKey
-                            })
-                            count = count + 1
-                        end
+-- 🤖 Auto rejoin khi xuất hiện ErrorPrompt (Disconnected/Kicked/Unexpected Error)
+do
+    local function tryHookPrompt(container)
+        if not container then return end
+        container.DescendantAdded:Connect(function(d)
+            -- Roblox thường spawn "ErrorPrompt" hoặc TextLabel có chữ Disconnected/Kicked
+            if typeof(d) == "Instance" then
+                local name = d.Name:lower()
+                if name:find("errorprompt") then
+                    task.wait(0.5)
+                    rejoinSameServer()
+                elseif d:IsA("TextLabel") then
+                    local txt = (d.Text or ""):lower()
+                    if txt:find("disconnected") or txt:find("kicked") or txt:find("unexpected") then
+                        task.wait(0.5)
+                        rejoinSameServer()
                     end
                 end
             end
+        end)
+    end
+
+    -- hook ngay và cả khi RobloxPromptGui xuất hiện trễ
+    local function hookNow()
+        local prompt = CoreGui:FindFirstChild("RobloxPromptGui", true)
+        if prompt then tryHookPrompt(prompt) end
+    end
+    hookNow()
+    CoreGui.ChildAdded:Connect(function(ch)
+        if ch.Name == "RobloxPromptGui" then
+            task.wait(0.1)
+            hookNow()
         end
-    end
-    table.sort(results, function(a,b) return a.name < b.name end)
-    return results
-end
-
--- UI -----------------------------------------------------------------
-local pg = parentGui()
-if syn and syn.protect_gui then local sh=Instance.new("ScreenGui"); syn.protect_gui(sh); sh.Parent=pg; pg=sh end
-
-local sg = Instance.new("ScreenGui")
-sg.Name = "MyPetFinder_UI"
-sg.IgnoreGuiInset = true
-sg.ResetOnSpawn = false
-sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-sg.Parent = pg
-
--- thu nhỏ
-local root = Instance.new("Frame", sg)
-root.Size = UDim2.fromOffset(300, 320)
-root.Position = UDim2.new(0, 20, 0, 80)
-root.BackgroundColor3 = Color3.fromRGB(24,26,32)
-root.Active = true
-root.Draggable = true
-root.BorderSizePixel = 0
-Instance.new("UICorner", root).CornerRadius = UDim.new(0,10)
-local stroke = Instance.new("UIStroke", root) stroke.Color = Color3.fromRGB(70,75,85) stroke.Thickness=1
-
-local title = Instance.new("TextLabel", root)
-title.BackgroundTransparency = 1
-title.Text = "My-Pet Finder • "..Players.LocalPlayer.Name
-title.TextColor3 = Color3.fromRGB(235,238,245)
-title.Font = Enum.Font.GothamSemibold
-title.TextSize = 13
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Size = UDim2.new(1,-16,0,22)
-title.Position = UDim2.new(0,8,0,6)
-
-local status = Instance.new("TextLabel", root)
-status.BackgroundTransparency = 1
-status.Text = ("R=%d • Chỉ hiển thị mục CÓ ID. Tap SCAN"):format(RADIUS)
-status.TextColor3 = Color3.fromRGB(190,195,205)
-status.Font = Enum.Font.Gotham
-status.TextSize = 11
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.Size = UDim2.new(1,-16,0,16)
-status.Position = UDim2.new(0,8,0,28)
-
-local row = Instance.new("Frame", root)
-row.BackgroundTransparency = 1
-row.Size = UDim2.new(1,-12,0,26)
-row.Position = UDim2.new(0,6,0,46)
-
-local function mkBtn(txt,w)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0,w,1,0)
-    b.BackgroundColor3 = Color3.fromRGB(80,90,110)
-    b.TextColor3 = Color3.new(1,1,1)
-    b.Font = Enum.Font.GothamSemibold
-    b.TextSize = 11
-    b.Text = txt
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0,7)
-    b.Parent = row
-    return b
-end
-
-local btnMinus = mkBtn("-R", 36)
-btnMinus.Position = UDim2.new(0,0,0,0)
-
-local btnScan = mkBtn("SCAN", 108)
-btnScan.BackgroundColor3 = Color3.fromRGB(80,130,255)
-btnScan.Position = UDim2.new(0,42,0,0)
-
-local btnPlus = mkBtn("+R", 36)
-btnPlus.Position = UDim2.new(0,154,0,0)
-
--- list (nhỏ)
-local listWrap = Instance.new("Frame", root)
-listWrap.Size = UDim2.new(1,-12,1,-106)
-listWrap.Position = UDim2.new(0,6,0,78)
-listWrap.BackgroundColor3 = Color3.fromRGB(18,20,24)
-listWrap.BorderSizePixel = 0
-Instance.new("UICorner", listWrap).CornerRadius = UDim.new(0,8)
-
-local scroll = Instance.new("ScrollingFrame", listWrap)
-scroll.Size = UDim2.fromScale(1,1)
-scroll.BackgroundTransparency = 1
-scroll.ScrollBarThickness = 6
-scroll.CanvasSize = UDim2.new(0,0,0,0)
-
-local holder = Instance.new("Frame", scroll)
-holder.BackgroundTransparency = 1
-holder.Size = UDim2.new(1, -8, 0, 0)
-holder.Position = UDim2.new(0,4,0,4)
-
-local layout = Instance.new("UIListLayout", holder)
-layout.Padding = UDim.new(0,4)
-
-local function refreshCanvas()
-    scroll.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 8)
-end
-layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshCanvas)
-
--- chọn
-local SELECTED, selectedCount = {}, 0
-local function setSelected(id, on)
-    if not id then return end
-    if on and not SELECTED[id] then SELECTED[id]=true; selectedCount = selectedCount + 1
-    elseif (not on) and SELECTED[id] then SELECTED[id]=nil; selectedCount = selectedCount - 1 end
-end
-
--- footer
-local foot = Instance.new("Frame", root)
-foot.BackgroundTransparency = 1
-foot.Size = UDim2.new(1,-12,0,24)
-foot.Position = UDim2.new(0,6,1,-26)
-
-local lblPick = Instance.new("TextLabel", foot)
-lblPick.BackgroundTransparency = 1
-lblPick.TextColor3 = Color3.fromRGB(210,214,223)
-lblPick.Font = Enum.Font.Gotham
-lblPick.TextSize = 11
-lblPick.TextXAlignment = Enum.TextXAlignment.Left
-lblPick.Size = UDim2.new(1,-90,1,0)
-lblPick.Text = "Đã chọn: 0"
-
-local btnCopy = Instance.new("TextButton", foot)
-btnCopy.Size = UDim2.new(0,80,1,0)
-btnCopy.Position = UDim2.new(1,-82,0,0)
-btnCopy.BackgroundColor3 = Color3.fromRGB(90,135,255)
-btnCopy.TextColor3 = Color3.new(1,1,1)
-btnCopy.Font = Enum.Font.GothamSemibold
-btnCopy.TextSize = 11
-btnCopy.Text = "Copy IDs"
-Instance.new("UICorner", btnCopy).CornerRadius = UDim.new(0,6)
-btnCopy.MouseButton1Click:Connect(function()
-    local t = {}
-    for id,_ in pairs(SELECTED) do table.insert(t, id) end
-    table.sort(t)
-    local s = table.concat(t, "\n")
-    if setclipboard then setclipboard(s) end
-    print("[MyPet] Selected IDs:\n"..s)
-    notify(("Đã copy %d ID."):format(#t), 3)
-end)
-
--- hàng kết quả (36px, click chọn)
-local function addRow(rec)
-    local item = Instance.new("Frame")
-    item.Size = UDim2.new(1,0,0,36)
-    item.BackgroundColor3 = Color3.fromRGB(35,38,46)
-    item.BorderSizePixel = 0
-    Instance.new("UICorner", item).CornerRadius = UDim.new(0,7)
-
-    local sum = Instance.new("TextLabel", item)
-    sum.BackgroundTransparency = 1
-    sum.Text = "• "..rec.reason.."  • ID: "..(rec.idKey.."=".. short(rec.id,20))
-    sum.TextColor3 = Color3.fromRGB(210,214,223)
-    sum.Font = Enum.Font.Gotham
-    sum.TextSize = 11
-    sum.TextXAlignment = Enum.TextXAlignment.Left
-    sum.Size = UDim2.new(1,-52,1,0)
-    sum.Position = UDim2.new(0,8,0,0)
-
-    local tick = Instance.new("TextButton", item)
-    tick.Size = UDim2.new(0,24,0,24)
-    tick.Position = UDim2.new(1,-28,0,6)
-    tick.BackgroundColor3 = Color3.fromRGB(80,90,110)
-    tick.TextColor3 = Color3.new(1,1,1)
-    tick.Font = Enum.Font.GothamSemibold
-    tick.TextSize = 11
-    tick.Text = ""
-    Instance.new("UICorner", tick).CornerRadius = UDim.new(0,5)
-
-    local on = false
-    local function repaint()
-        item.BackgroundColor3 = on and Color3.fromRGB(50,85,60) or Color3.fromRGB(35,38,46)
-        tick.Text = on and "✓" or ""
-    end
-    local function toggle()
-        on = not on
-        setSelected(rec.id, on)
-        lblPick.Text = "Đã chọn: "..selectedCount
-        repaint()
-    end
-    repaint()
-    tick.MouseButton1Click:Connect(toggle)
-    item.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then toggle() end
     end)
-
-    item.Parent = holder
-    refreshCanvas()
 end
 
-btnMinus.MouseButton1Click:Connect(function()
-    RADIUS = math.max(0, RADIUS-40)
-    status.Text = ("R=%d • Chỉ hiển thị mục CÓ ID. Tap SCAN"):format(RADIUS)
-end)
-btnPlus.MouseButton1Click:Connect(function()
-    RADIUS = RADIUS + 40
-    status.Text = ("R=%d • Chỉ hiển thị mục CÓ ID. Tap SCAN"):format(RADIUS)
+-- 🧪 Tuỳ chọn: cũng có thể rejoin khi state Teleport report lỗi
+TS.TeleportInitFailed:Connect(function(player, result, placeId, spawnName)
+    warn("[Rejoin] TeleportInitFailed:", result)
+    task.wait(0.75)
+    rejoinSameServer()
 end)
 
-btnScan.MouseButton1Click:Connect(function()
-    status.Text = "Đang quét…"
-    local ok, res = pcall(scanMine)
-    if not ok then
-        status.Text = "Lỗi quét: "..tostring(res)
-        notify("SCAN lỗi (xem status)", 4)
-        return
-    end
-    holder:ClearAllChildren()
-    SELECTED, selectedCount = {}, 0
-    lblPick.Text = "Đã chọn: 0"
-
-    layout = Instance.new("UIListLayout", holder)
-    layout.Padding = UDim.new(0,4)
-    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshCanvas)
-
-    if #res == 0 then
-        local lbl = Instance.new("TextLabel", holder)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = "Không thấy mục nào có ID trong bán kính. Tăng R rồi SCAN lại."
-        lbl.TextColor3 = Color3.fromRGB(210,140,140)
-        lbl.Font = Enum.Font.Gotham
-        lbl.TextSize = 11
-        lbl.TextWrapped = true
-        lbl.Size = UDim2.new(1,0,0,28)
-    else
-        for _,rec in ipairs(res) do addRow(rec) end
-    end
-    refreshCanvas()
-    task.wait()
-    -- tự cuộn xuống cuối
-    local maxY = math.max(0, layout.AbsoluteContentSize.Y - scroll.AbsoluteWindowSize.Y + 8)
-    scroll.CanvasPosition = Vector2.new(0, maxY)
-    status.Text = ("Tìm thấy %d mục có ID."):format(#res)
-end)
-
-notify("My-Pet Finder (safe mini) sẵn sàng. Đứng trong vườn, bấm SCAN.", 3)
+print("[Rejoin] Sẵn sàng. Nhấn F5 hoặc bấm nút ⟳ Rejoin để vào lại đúng server hiện tại.")
