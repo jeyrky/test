@@ -30,7 +30,7 @@ getgenv().CFG = {
 getgenv().TRI_GUIDS = {
     "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
     "{80437d63-3941-4869-ba68-986f7328d3c9}",
-    "{3b59eff4-eb3c-4c5e-ba82-5ba6281c286a}",
+    "{a27bac7d-fde0-4122-b519-1918700d8630}",
     -- thêm bao nhiêu GUID tùy bạn, script sẽ thả đúng bấy nhiêu
 }
 getgenv().MOON_GUIDS = {
