@@ -55,4 +55,30 @@ do
             end
             if d:IsA("TextLabel") then
                 local t = string.lower(d.Text or "")
-                if t:find("disconnected") or t:find("kicked") or t:find("unex
+                if t:find("disconnected") or t:find("kicked") or t:find("unexpected")
+                   or (t:find("server") and t:find("closing")) then
+                    task.wait(0.4); joinVip()
+                end
+            end
+        end)
+    end
+    local function tryHookNow()
+        local p = CoreGui:FindFirstChild("RobloxPromptGui", true)
+        if p then hookPrompt(p) end
+    end
+    tryHookNow()
+    CoreGui.ChildAdded:Connect(function(ch)
+        if ch.Name == "RobloxPromptGui" then
+            task.wait(0.1); tryHookNow()
+        end
+    end)
+end
+
+-- Retry khi teleport fail
+TS.TeleportInitFailed:Connect(function(_, result)
+    warn("[VIP Join] TeleportInitFailed:", result)
+    task.wait(0.6)
+    joinVip()
+end)
+
+print(string.format("[VIP Join] Đang kết nối tới VIP: PlaceId=%s, Code=%s", tostring(PLACE_ID), tostring(VIP_CODE)))
