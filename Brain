@@ -1,4 +1,4 @@
--- 🔁 AUTO KICK + AUTO REJOIN SAME SERVER (Mobile/PC)
+-- 🔁 AUTO RECONNECT SAME SERVER (no Kick, mobile-friendly)
 local TS         = game:GetService("TeleportService")
 local Players    = game:GetService("Players")
 local CoreGui    = game:GetService("CoreGui")
@@ -7,120 +7,51 @@ local lp         = Players.LocalPlayer
 
 -- ===== CẤU HÌNH =====
 local CFG = {
-    KICK_EVERY_SECONDS   = 60,     -- mỗi 60s tự Kick
-    MAX_RETRIES          = 6,      -- số lần thử Teleport khi lỗi
-    RETRY_BACKOFF_BASE   = 0.8,    -- delay cơ sở giữa các lần retry
-    ENABLE_WATCHDOG      = true,   -- phát hiện treo > STALL_SECONDS => rejoin
+    PERIODIC_REJOIN_SEC  = 60,    -- mỗi 60s tự “kết nối lại”
+    MAX_RETRIES          = 6,     -- thử lại teleport tối đa
+    RETRY_BACKOFF_BASE   = 0.8,   -- giây; tăng dần mỗi lần fail
+    WATCHDOG             = true,  -- treo heartbeat -> tự vào lại
     STALL_SECONDS        = 12,
     CHECK_INTERVAL       = 2,
+    SAME_SERVER_FIRST    = true,  -- ưu tiên vào lại đúng JobId
 }
-
--- Lưu server hiện tại
-local PLACE_ID = game.PlaceId
-local JOB_ID   = game.JobId
 
 local REJOINING = false
 
-local function rejoin()
+local function rejoinSameOrNew()
     if REJOINING then return end
     REJOINING = true
 
-    local function attemptSame()
+    -- luôn lấy PlaceId/JobId MỚI NHẤT ngay lúc gọi (phòng server restart đổi JobId)
+    local PLACE_ID = game.PlaceId
+    local JOB_ID   = game.JobId
+
+    -- thử vào lại đúng JobId trước
+    if CFG.SAME_SERVER_FIRST and JOB_ID and JOB_ID ~= "" then
         for i = 1, CFG.MAX_RETRIES do
             local ok, err = pcall(function()
                 TS:TeleportToPlaceInstance(PLACE_ID, JOB_ID, lp)
             end)
-            if ok then return true end
-            warn(("[AutoRejoin] Lỗi lần %d/%d: %s"):format(i, CFG.MAX_RETRIES, tostring(err)))
+            if ok then return end
+            warn(("[Reconnect] Same JobId fail %d/%d: %s"):format(i, CFG.MAX_RETRIES, tostring(err)))
             task.wait(CFG.RETRY_BACKOFF_BASE + (i-1)*0.5)
         end
-        return false
     end
 
-    local ok = attemptSame()
-    if not ok then
-        -- fallback: vào server mới cùng PlaceId nếu server cũ không còn/đầy
-        warn("[AutoRejoin] Fallback → Teleport(PlaceId) (server mới)")
-        for i = 1, CFG.MAX_RETRIES do
-            local ok2 = pcall(function()
-                TS:Teleport(PLACE_ID, lp)
-            end)
-            if ok2 then return end
-            task.wait(CFG.RETRY_BACKOFF_BASE + (i-1)*0.5)
-        end
-        REJOINING = false
+    -- fallback: vào PlaceId (server mới) nếu server cũ đóng/full
+    for i = 1, CFG.MAX_RETRIES do
+        local ok, err = pcall(function()
+            TS:Teleport(PLACE_ID, lp)
+        end)
+        if ok then return end
+        warn(("[Reconnect] Place-only fail %d/%d: %s"):format(i, CFG.MAX_RETRIES, tostring(err)))
+        task.wait(CFG.RETRY_BACKOFF_BASE + (i-1)*0.5)
     end
+
+    REJOINING = false
 end
 
--- 🔔 Bắt ErrorPrompt (Disconnected/Kicked/Unexpected Error) → tự rejoin
+-- 🔔 Bắt ErrorPrompt (Disconnected/Kicked/Unexpected Error) -> tự vào lại
 do
-    local function hook(container)
-        container.DescendantAdded:Connect(function(d)
-            if typeof(d) ~= "Instance" then return end
-            local name = string.lower(d.Name or "")
-            if name:find("errorprompt") then
-                task.wait(0.4); rejoin(); return
-            end
-            if d:IsA("TextLabel") then
-                local t = string.lower(d.Text or "")
-                if t:find("disconnected") or t:find("kicked") or t:find("unexpected") or (t:find("server") and t:find("closing")) then
-                    task.wait(0.4); rejoin()
-                end
-            end
-        end)
-    end
-
-    local function tryHookNow()
-        local prompt = CoreGui:FindFirstChild("RobloxPromptGui", true)
-        if prompt then hook(prompt) end
-    end
-
-    tryHookNow()
-    CoreGui.ChildAdded:Connect(function(ch)
-        if ch.Name == "RobloxPromptGui" then
-            task.wait(0.1); tryHookNow()
-        end
-    end)
-end
-
--- 🛰️ Teleport init fail → rejoin lại
-TS.TeleportInitFailed:Connect(function(_, result)
-    warn("[AutoRejoin] TeleportInitFailed:", result)
-    task.wait(0.6)
-    rejoin()
-end)
-
--- 🐶 Watchdog: nếu Heartbeat đứng quá lâu → rejoin
-if CFG.ENABLE_WATCHDOG then
-    task.spawn(function()
-        local lastBeat = tick()
-        RunService.Heartbeat:Connect(function() lastBeat = tick() end)
-        while task.wait(CFG.CHECK_INTERVAL) do
-            if REJOINING then break end
-            if (tick() - lastBeat) > CFG.STALL_SECONDS then
-                warn("[AutoRejoin] Treo > " .. CFG.STALL_SECONDS .. "s → rejoin")
-                rejoin()
-                break
-            end
-        end
-    end)
-end
-
--- ⛔ TỰ ĐỘNG KICK THEO CHU KỲ, rồi để hook phía trên tự rejoin lại đúng server
-task.spawn(function()
-    while task.wait(CFG.KICK_EVERY_SECONDS) do
-        if REJOINING then break end
-        -- đảm bảo đã lưu JOB_ID trước khi Kick (đã lưu ở trên)
-        pcall(function()
-            lp:Kick("Auto refresh – rejoin same server")
-        end)
-        -- Sau Kick sẽ hiện ErrorPrompt; hook ở trên sẽ gọi rejoin()
-        -- Nếu vì lý do nào đó không bật prompt, fallback sau 1s:
-        task.delay(1.2, function()
-            if not REJOINING then rejoin() end
-        end)
-    end
-end)
-
-print(string.format("[AutoKick+Rejoin] Ready. PlaceId=%s  JobId=%s  (chu kỳ kick %ds)",
-    tostring(PLACE_ID), tostring(JOB_ID), CFG.KICK_EVERY_SECONDS))
+    local function hookPrompt(container)
+     
