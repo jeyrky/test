@@ -80,7 +80,7 @@ local followDistance = 1
 local checkInterval  = 5
 
 -- ⚠️ THAY allowedKeywords cũ bằng 2 danh sách dưới:
-local typeKeywords = { "Secret", "Pipi Kiwwi"}  -- hệ/rarity cần bắt
+local typeKeywords = { "Secret", "Rare"}  -- hệ/rarity cần bắt
 local nameKeywords = { "Brainrot lucky", } -- TÊN pet cần bắt (thêm/bớt tùy ý)
 
 local lastPet     = nil
