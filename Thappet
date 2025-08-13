@@ -1,0 +1,779 @@
+--== GROW A GARDEN • MY-PET FINDER (SAFE MINI PATCH + SELECT-ALL + QUICK ACTIONS + LOOP S) ==--
+
+-- Services
+local Players = game:GetService("Players")
+local LP      = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local SGCore  = game:GetService("StarterGui")
+local HS      = game:GetService("HttpService")
+local RS      = game:GetService("ReplicatedStorage")
+
+-- Config
+local RADIUS = 220
+local CAP    = 400
+local ONLY_WITH_ID = true   -- chỉ hiển thị mục có ID
+
+local function notify(t, d)
+    pcall(function() SGCore:SetCore("SendNotification", {Title="My-Pet Finder", Text=t, Duration=d or 3}) end)
+    print("[MyPet] "..t)
+end
+
+local function parentGui()
+    if gethui then local ok,g=pcall(gethui); if ok and g then return g end end
+    return CoreGui
+end
+
+local function getHRP()
+    local c = LP.Character or LP.CharacterAdded:Wait()
+    return c:WaitForChild("HumanoidRootPart")
+end
+
+local function dist(a,b) return (a-b).Magnitude end
+local function short(s, n) s=tostring(s or "") n=n or 22 return (#s>n) and (s:sub(1,n).."…") or s end
+
+-- ==== Helpers: read owner/id from Attributes + ValueBase
+local function getAttr(obj, key)
+    local v = obj:GetAttribute(key)
+    if v ~= nil then return v end
+    for _,d in ipairs(obj:GetDescendants()) do
+        if d:IsA("ValueBase") and d.Name:lower()==key:lower() then
+            return d.Value
+        end
+    end
+    return nil
+end
+
+local function anyOwnerMatchesMe(obj)
+    local myName, myId = LP.Name, LP.UserId
+    for _,d in ipairs(obj:GetDescendants()) do
+        if d:IsA("ObjectValue") and d.Name:lower()=="owner" and d.Value then
+            local v = d.Value
+            if v:IsA("Player") and (v==LP or v.Name==myName or v.UserId==myId) then
+                return true, "Owner(ObjectValue)=Player("..v.Name..")"
+            end
+        end
+    end
+    local ownerName = getAttr(obj, "OwnerName") or getAttr(obj, "PlayerName") or getAttr(obj, "PlotOwner") or getAttr(obj, "GardenOwner")
+    if typeof(ownerName)=="string" and ownerName==myName then return true, "OwnerName="..ownerName end
+    local ownerId = getAttr(obj, "OwnerId") or getAttr(obj, "UserId")
+    if typeof(ownerId)=="number" and ownerId==myId then return true, "OwnerId="..tostring(ownerId) end
+    if typeof(ownerId)=="string" and tostring(ownerId)==tostring(myId) then return true, "OwnerId="..ownerId end
+    return false, nil
+end
+
+local function looksLikePetName(n)
+    n=n:lower()
+    return n:find("pet") or n:find("animal") or n:find("companion")
+end
+
+local function extractId(obj)
+    local keys = {"PetId","petId","GUID","Guid","guid","UUID","uuid","Id","ID","id","Token","UID","uid"}
+    for _,k in ipairs(keys) do
+        local v = getAttr(obj, k)
+        if v ~= nil then return tostring(v), k end
+    end
+    for _,d in ipairs(obj:GetDescendants()) do
+        if d:IsA("ValueBase") then
+            local nm = d.Name:lower()
+            if nm=="id" or nm=="guid" or nm=="petid" or nm=="uuid" or nm:find("id") or nm:find("guid") then
+                return tostring(d.Value), d.Name
+            end
+        end
+    end
+    return nil, nil
+end
+
+-- ==== Scan mine
+local function scanMine()
+    local center = getHRP().Position
+    local results, count = {}, 0
+    for _,obj in ipairs(workspace:GetDescendants()) do
+        if count >= CAP then break end
+        if obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart") then
+            if not (obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid")) then
+                local pos
+                if obj:IsA("Model") then
+                    local pp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                    pos = pp and pp.Position
+                elseif obj:IsA("BasePart") then
+                    pos = obj.Position
+                end
+                if (RADIUS==0) or (pos and dist(pos, center) <= RADIUS) then
+                    local mine, why = anyOwnerMatchesMe(obj)
+                    local petish = looksLikePetName(obj.Name)
+                    if mine or petish then
+                        local id, idKey = extractId(obj)
+                        if (not ONLY_WITH_ID) or id ~= nil then
+                            table.insert(results, {
+                                ref=obj, name=obj.Name, class=obj.ClassName,
+                                reason = mine and ("Mine: "..why) or "Name-like: pet",
+                                id=id, idKey=idKey
+                            })
+                            count += 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    table.sort(results, function(a,b) return a.name < b.name end)
+    return results
+end
+
+-- ==== Robust remotes: Pets (service/equip/unequip) + Place/Deploy (vị trí)
+local Remotes = { service=nil, equipEv=nil, unequipEv=nil, placeEvs={} }
+
+local function findPetsRemotes()
+    -- PetsService chuẩn
+    local ok, service = pcall(function()
+        local ge = RS:FindFirstChild("GameEvents") or RS:WaitForChild("GameEvents", 1)
+        return ge and ge:FindFirstChild("PetsService")
+    end)
+    if ok and service and service:IsA("RemoteEvent") then Remotes.service = service end
+
+    local function looksEquip(n)
+        n=n:lower(); return n=="equip" or n=="equipall" or (n:find("equip") and n:find("pet"))
+    end
+    local function looksUnequip(n)
+        n=n:lower(); return n=="unequip" or n=="unequipall" or n:find("remove") or (n:find("unequip") and n:find("pet"))
+    end
+    local function looksPlace(n)
+        n=n:lower(); return n:find("place") or n:find("deploy") or n:find("drop") or n:find("setpos") or n:find("setposition")
+    end
+
+    for _,d in ipairs(RS:GetDescendants()) do
+        if d:IsA("RemoteEvent") then
+            local n = d.Name
+            if (not Remotes.equipEv)   and looksEquip(n)   then Remotes.equipEv = d end
+            if (not Remotes.unequipEv) and looksUnequip(n) then Remotes.unequipEv = d end
+            if looksPlace(n) then table.insert(Remotes.placeEvs, d) end
+        end
+    end
+end
+findPetsRemotes()
+
+-- ==== Equip / Unequip multi-try
+local function tryEquip(id)
+    id = tostring(id)
+    local ok = false
+    if Remotes.service then
+        ok = pcall(function() Remotes.service:FireServer("EquipPet", id) end) or ok
+        ok = pcall(function() Remotes.service:FireServer("Equip", id) end) or ok
+        ok = pcall(function() Remotes.service:FireServer({action="EquipPet", id=id}) end) or ok
+    end
+    if Remotes.equipEv then
+        ok = pcall(function() Remotes.equipEv:FireServer(id) end) or ok
+        ok = pcall(function() Remotes.equipEv:FireServer(tonumber(id) or id) end) or ok
+    end
+    return ok
+end
+
+local function tryUnequip(id)
+    id = tostring(id)
+    local ok = false
+    if Remotes.service then
+        ok = pcall(function() Remotes.service:FireServer("UnequipPet", id) end) or ok
+        ok = pcall(function() Remotes.service:FireServer("Unequip", id) end) or ok
+        ok = pcall(function() Remotes.service:FireServer({action="UnequipPet", id=id}) end) or ok
+    end
+    if Remotes.unequipEv then
+        ok = pcall(function() Remotes.unequipEv:FireServer(id) end) or ok
+        ok = pcall(function() Remotes.unequipEv:FireServer(tonumber(id) or id) end) or ok
+    end
+    return ok
+end
+
+local function equipAll(ids)
+    local okAny=false
+    for _,id in ipairs(ids) do
+        local ok = tryEquip(id)
+        okAny = okAny or ok
+        if not ok then print("[MyPet][equip] FAIL id=", id) end
+    end
+    return okAny
+end
+
+local function unequipAll(ids)
+    local okAny=false
+    for _,id in ipairs(ids) do
+        local ok = tryUnequip(id)
+        okAny = okAny or ok
+        if not ok then print("[MyPet][unequip] FAIL id=", id) end
+    end
+    return okAny
+end
+
+-- ==== Gom/Ép: điểm đặt & kỹ thuật gom
+local function getDropPoint()
+    local hrp = getHRP()
+    return hrp.Position + hrp.CFrame.LookVector * 3
+end
+
+local function tryPlaceViaRemotes(point)
+    local okAny = false
+    for _,ev in ipairs(Remotes.placeEvs) do
+        okAny = pcall(function() ev:FireServer(point) end) or okAny
+        okAny = pcall(function() ev:FireServer(point, LP) end) or okAny
+        okAny = pcall(function() ev:FireServer({pos=point}) end) or okAny
+    end
+    return okAny
+end
+
+local function tpModelTo(model, point)
+    local pp = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+    if not pp then return false end
+    local ok = pcall(function()
+        model:SetPrimaryPartCFrame(CFrame.new(point))
+    end)
+    return ok
+end
+
+local function forceSnapSelected(idsSet, point)
+    local moved = 0
+    for _,obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") then
+            local mine = anyOwnerMatchesMe(obj)
+            if mine then
+                local id = select(1, extractId(obj))
+                if (not idsSet) or (id and idsSet[id]) then
+                    if tpModelTo(obj, point) then moved += 1 end
+                end
+            end
+        end
+    end
+    return moved
+end
+
+-- ===================== UI =====================
+local pg = parentGui()
+if syn and syn.protect_gui then local sh=Instance.new("ScreenGui"); syn.protect_gui(sh); sh.Parent=pg; pg=sh end
+
+local sg = Instance.new("ScreenGui")
+sg.Name = "MyPetFinder_UI"
+sg.IgnoreGuiInset = true
+sg.ResetOnSpawn = false
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+sg.Parent = pg
+
+-- khung
+local root = Instance.new("Frame", sg)
+root.Size = UDim2.fromOffset(340, 460)
+root.Position = UDim2.new(0, 20, 0, 80)
+root.BackgroundColor3 = Color3.fromRGB(24,26,32)
+root.Active = true
+root.Draggable = true
+root.BorderSizePixel = 0
+Instance.new("UICorner", root).CornerRadius = UDim.new(0,12)
+local stroke = Instance.new("UIStroke", root) stroke.Color = Color3.fromRGB(70,75,85) stroke.Thickness=1
+
+local titleBar = Instance.new("Frame", root)
+titleBar.BackgroundTransparency = 1
+titleBar.Size = UDim2.new(1,-16,0,28)
+titleBar.Position = UDim2.new(0,8,0,6)
+
+local title = Instance.new("TextLabel", titleBar)
+title.BackgroundTransparency = 1
+title.Text = "My-Pet Finder • "..Players.LocalPlayer.Name
+title.TextColor3 = Color3.fromRGB(235,238,245)
+title.Font = Enum.Font.GothamSemibold
+title.TextSize = 13
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Size = UDim2.new(1, -0, 1, 0)
+
+local status = Instance.new("TextLabel", root)
+status.BackgroundTransparency = 1
+status.Text = ("R=%d • Chỉ hiển thị mục CÓ ID. Tap SCAN"):format(RADIUS)
+status.TextColor3 = Color3.fromRGB(190,195,205)
+status.Font = Enum.Font.Gotham
+status.TextSize = 11
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.Size = UDim2.new(1,-16,0,16)
+status.Position = UDim2.new(0,8,0,32)
+
+-- Hàng nút R-/SCAN/R+
+local row = Instance.new("Frame", root)
+row.BackgroundTransparency = 1
+row.Size = UDim2.new(1,-12,0,26)
+row.Position = UDim2.new(0,6,0,50)
+
+local function mkBtn(parent, txt,w,clr)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,1,0)
+    b.BackgroundColor3 = clr or Color3.fromRGB(80,90,110)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Font = Enum.Font.GothamSemibold
+    b.TextSize = 11
+    b.Text = txt
+    b.AutoButtonColor = true
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,7)
+    b.Parent = parent
+    return b
+end
+
+local btnMinus = mkBtn(row, "-R", 36)
+btnMinus.Position = UDim2.new(0,0,0,0)
+
+local btnScan = mkBtn(row, "SCAN", 90, Color3.fromRGB(80,130,255))
+btnScan.Position = UDim2.new(0,40,0,0)
+
+local btnPlus = mkBtn(row, "+R", 36)
+btnPlus.Position = UDim2.new(0,134,0,0)
+
+-- ==== QUICK ACTIONS (không vòng lặp): THU/THẢ/GOM/ÉP
+local qa = Instance.new("Frame", root)
+qa.BackgroundTransparency = 1
+qa.Size = UDim2.new(1,-12,0,30)
+qa.Position = UDim2.new(0,6,0,82)
+
+local btnRecall = mkBtn(qa, "THU HẾT", 78, Color3.fromRGB(200,90,90))
+btnRecall.Position = UDim2.new(0,0,0,0)
+
+local btnDrop = mkBtn(qa, "THẢ HẾT", 78, Color3.fromRGB(80,170,100))
+btnDrop.Position = UDim2.new(0,84,0,0)
+
+local btnCluster = mkBtn(qa, "GOM PET", 78, Color3.fromRGB(90,135,255))
+btnCluster.Position = UDim2.new(0,168,0,0)
+
+local btnForce = mkBtn(qa, "ÉP PET", 78, Color3.fromRGB(150,110,255))
+btnForce.Position = UDim2.new(0,252,0,0)
+
+-- ==== LOOP CTRL: S + BẮT ĐẦU/DỪNG
+local loopCtrl = Instance.new("Frame", root)
+loopCtrl.BackgroundTransparency = 1
+loopCtrl.Size = UDim2.new(1,-12,0,28)
+loopCtrl.Position = UDim2.new(0,6,0,116)
+
+local lblS = Instance.new("TextLabel", loopCtrl)
+lblS.BackgroundTransparency = 1
+lblS.Text = "S (giây) giữa mỗi THU→THẢ:"
+lblS.TextColor3 = Color3.fromRGB(200,205,215)
+lblS.Font = Enum.Font.Gotham
+lblS.TextSize = 11
+lblS.TextXAlignment = Enum.TextXAlignment.Left
+lblS.Size = UDim2.new(0,170,1,0)
+lblS.Position = UDim2.new(0,0,0,0)
+
+local sBox = Instance.new("TextBox", loopCtrl)
+sBox.Size = UDim2.new(0,52,1,0)
+sBox.Position = UDim2.new(0,174,0,0)
+sBox.BackgroundColor3 = Color3.fromRGB(35,38,46)
+sBox.TextColor3 = Color3.new(1,1,1)
+sBox.ClearTextOnFocus = false
+sBox.Text = "5"
+sBox.PlaceholderText = "5"
+sBox.Font = Enum.Font.GothamSemibold
+sBox.TextSize = 11
+Instance.new("UICorner", sBox).CornerRadius = UDim.new(0,6)
+
+local btnStart = mkBtn(loopCtrl, "BẮT ĐẦU", 80, Color3.fromRGB(70,170,90))
+btnStart.Position = UDim2.new(0,232,0,0)
+
+-- list
+local listWrap = Instance.new("Frame", root)
+listWrap.Size = UDim2.new(1,-12,1,-244) -- chừa chỗ cho footer + loop
+listWrap.Position = UDim2.new(0,6,0,150)
+listWrap.BackgroundColor3 = Color3.fromRGB(18,20,24)
+listWrap.BorderSizePixel = 0
+Instance.new("UICorner", listWrap).CornerRadius = UDim.new(0,8)
+
+local scroll = Instance.new("ScrollingFrame", listWrap)
+scroll.Size = UDim2.fromScale(1,1)
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 6
+scroll.CanvasSize = UDim2.new(0,0,0,0)
+
+local holder = Instance.new("Frame", scroll)
+holder.BackgroundTransparency = 1
+holder.Size = UDim2.new(1, -8, 0, 0)
+holder.Position = UDim2.new(0,4,0,4)
+
+local layout = Instance.new("UIListLayout", holder)
+layout.Padding = UDim.new(0,4)
+
+local function refreshCanvas()
+    scroll.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 8)
+end
+layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshCanvas)
+
+-- chọn
+local SELECTED, selectedCount = {}, 0
+local function setSelected(id, on)
+    if not id then return end
+    if on and not SELECTED[id] then SELECTED[id]=true; selectedCount += 1
+    elseif (not on) and SELECTED[id] then SELECTED[id]=nil; selectedCount -= 1 end
+end
+
+local function getSelectedIds()
+    local t = {}
+    for id,_ in pairs(SELECTED) do table.insert(t, id) end
+    table.sort(t)
+    return t
+end
+
+-- footer (đếm + 3 nút)
+local foot = Instance.new("Frame", root)
+foot.BackgroundTransparency = 1
+foot.Size = UDim2.new(1,-12,0,56)
+foot.Position = UDim2.new(0,6,1,-56)
+
+local lblPick = Instance.new("TextLabel", foot)
+lblPick.BackgroundTransparency = 1
+lblPick.TextColor3 = Color3.fromRGB(210,214,223)
+lblPick.Font = Enum.Font.Gotham
+lblPick.TextSize = 11
+lblPick.TextXAlignment = Enum.TextXAlignment.Left
+lblPick.Size = UDim2.new(1,0,0,18)
+lblPick.Position = UDim2.new(0,0,0,0)
+lblPick.Text = "Đã chọn: 0"
+
+local btnRow = Instance.new("Frame", foot)
+btnRow.BackgroundTransparency = 1
+btnRow.Size = UDim2.new(1,0,0,30)
+btnRow.Position = UDim2.new(0,0,0,22)
+
+local function mkMini(parent, text, w, clr)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,1,0)
+    b.BackgroundColor3 = clr or Color3.fromRGB(80,90,110)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Font = Enum.Font.GothamSemibold
+    b.TextSize = 11
+    b.Text = text
+    b.AutoButtonColor = true
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    b.Parent = parent
+    return b
+end
+
+local btnAll  = mkMini(btnRow, "Chọn tất cả", 100, Color3.fromRGB(70,150,90))
+btnAll.Position = UDim2.new(0,0,0,0)
+
+local btnNone = mkMini(btnRow, "Bỏ chọn", 80, Color3.fromRGB(120,90,80))
+btnNone.Position = UDim2.new(0,108,0,0)
+
+local btnCopy = mkMini(btnRow, "Copy IDs", 90, Color3.fromRGB(90,135,255))
+btnCopy.Position = UDim2.new(1,-92,0,0)
+
+local function markItem(item, on)
+    if not item or not item:IsA("Frame") then return end
+    local id = item:GetAttribute("pet_id")
+    if not id then return end
+    setSelected(id, on)
+    item.BackgroundColor3 = on and Color3.fromRGB(50,85,60) or Color3.fromRGB(35,38,46)
+    local tick = item:FindFirstChild("Tick")
+    if tick and tick:IsA("TextButton") then
+        tick.Text = on and "✓" or ""
+        tick.BackgroundColor3 = on and Color3.fromRGB(70,110,80) or Color3.fromRGB(80,90,110)
+    end
+end
+
+local function selectAll(state)
+    for _,it in ipairs(holder:GetChildren()) do
+        if it:IsA("Frame") and it:GetAttribute("pet_id") then
+            markItem(it, state)
+        end
+    end
+    lblPick.Text = "Đã chọn: "..selectedCount
+end
+
+btnAll.MouseButton1Click:Connect(function() selectAll(true) end)
+btnNone.MouseButton1Click:Connect(function() selectAll(false) end)
+btnCopy.MouseButton1Click:Connect(function()
+    local t = getSelectedIds()
+    local s = table.concat(t, "\n")
+    if setclipboard then setclipboard(s) end
+    print("[MyPet] Selected IDs:\n"..s)
+    notify(("Đã copy %d ID."):format(#t), 3)
+end)
+
+-- item row
+local function addRow(rec)
+    local item = Instance.new("Frame")
+    item.Size = UDim2.new(1,0,0,36)
+    item.BackgroundColor3 = Color3.fromRGB(35,38,46)
+    item.BorderSizePixel = 0
+    item:SetAttribute("pet_id", rec.id)
+    Instance.new("UICorner", item).CornerRadius = UDim.new(0,7)
+
+    local sum = Instance.new("TextLabel", item)
+    sum.BackgroundTransparency = 1
+    sum.Text = "• "..rec.reason.."  • ID: "..(rec.idKey.."=".. short(rec.id,20))
+    sum.TextColor3 = Color3.fromRGB(210,214,223)
+    sum.Font = Enum.Font.Gotham
+    sum.TextSize = 11
+    sum.TextXAlignment = Enum.TextXAlignment.Left
+    sum.Size = UDim2.new(1,-52,1,0)
+    sum.Position = UDim2.new(0,8,0,0)
+
+    local tick = Instance.new("TextButton", item)
+    tick.Name = "Tick"
+    tick.Size = UDim2.new(0,24,0,24)
+    tick.Position = UDim2.new(1,-28,0,6)
+    tick.BackgroundColor3 = Color3.fromRGB(80,90,110)
+    tick.TextColor3 = Color3.new(1,1,1)
+    tick.Font = Enum.Font.GothamSemibold
+    tick.TextSize = 11
+    tick.Text = ""
+    Instance.new("UICorner", tick).CornerRadius = UDim.new(0,5)
+
+    local on = false
+    local function repaint()
+        item.BackgroundColor3 = on and Color3.fromRGB(50,85,60) or Color3.fromRGB(35,38,46)
+        tick.Text = on and "✓" or ""
+        tick.BackgroundColor3 = on and Color3.fromRGB(70,110,80) or Color3.fromRGB(80,90,110)
+    end
+    local function toggle()
+        on = not on
+        markItem(item, on)
+        lblPick.Text = "Đã chọn: "..selectedCount
+        repaint()
+    end
+    repaint()
+    tick.MouseButton1Click:Connect(toggle)
+    item.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then toggle() end
+    end)
+
+    item.Parent = holder
+    refreshCanvas()
+end
+
+-- R buttons
+btnMinus.MouseButton1Click:Connect(function()
+    RADIUS = math.max(0, RADIUS-40)
+    status.Text = ("R=%d • Chỉ hiển thị mục CÓ ID. Tap SCAN"):format(RADIUS)
+end)
+btnPlus.MouseButton1Click:Connect(function()
+    RADIUS = RADIUS + 40
+    status.Text = ("R=%d • Chỉ hiển thị mục CÓ ID. Tap SCAN"):format(RADIUS)
+end)
+
+-- SCAN
+btnScan.MouseButton1Click:Connect(function()
+    status.Text = "Đang quét…"
+    local ok, res = pcall(scanMine)
+    if not ok then
+        status.Text = "Lỗi quét: "..tostring(res)
+        notify("SCAN lỗi (xem status)", 4)
+        return
+    end
+    holder:ClearAllChildren()
+    SELECTED, selectedCount = {}, 0
+    lblPick.Text = "Đã chọn: 0"
+
+    layout = Instance.new("UIListLayout", holder)
+    layout.Padding = UDim.new(0,4)
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshCanvas)
+
+    if #res == 0 then
+        local lbl = Instance.new("TextLabel", holder)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = "Không thấy mục nào có ID trong bán kính. Tăng R rồi SCAN lại."
+        lbl.TextColor3 = Color3.fromRGB(210,140,140)
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextSize = 11
+        lbl.TextWrapped = true
+        lbl.Size = UDim2.new(1,0,0,28)
+    else
+        for _,rec in ipairs(res) do addRow(rec) end
+    end
+    refreshCanvas()
+    task.wait()
+    local maxY = math.max(0, layout.AbsoluteContentSize.Y - scroll.AbsoluteWindowSize.Y + 8)
+    scroll.CanvasPosition = Vector2.new(0, maxY)
+    status.Text = ("Tìm thấy %d mục có ID."):format(#res)
+end)
+
+-- ========= QUICK ACTIONS HANDLERS =========
+local function idsToSet(list)
+    local s = {}
+    for _, id in ipairs(list) do s[id] = true end
+    return s
+end
+
+-- Thu tất cả
+btnRecall.MouseButton1Click:Connect(function()
+    local ids = getSelectedIds()
+    if #ids == 0 then notify("Chưa chọn ID nào!", 3) return end
+    if (not Remotes.service) and (not Remotes.unequipEv) then findPetsRemotes() end
+    local ok = unequipAll(ids)
+    notify(ok and ("Đã gửi lệnh THU " .. #ids .. " pet.") or "Không thu được pet (Remote payload khác?).", 3)
+end)
+
+-- Thả tất cả
+btnDrop.MouseButton1Click:Connect(function()
+    local ids = getSelectedIds()
+    if #ids == 0 then notify("Chưa chọn ID nào!", 3) return end
+    if (not Remotes.service) and (not Remotes.equipEv) then findPetsRemotes() end
+    local ok = equipAll(ids)
+    notify(ok and ("Đã gửi lệnh THẢ " .. #ids .. " pet.") or "Không thả được pet (Remote payload khác?).", 3)
+end)
+
+----------------------------------------------------------------
+-- GOM LIÊN TỤC (toggle): cố gắng gom thật; fallback ép local
+----------------------------------------------------------------
+local CLUSTERING = false
+local CLUSTER_RATE = 0.25      -- giãn cách gọi để tránh spam server
+local LOCAL_EPS = 0.05         -- bán kính gom siêu nhỏ khi ép local
+local LOCAL_Y   = 3            -- cao hơn mặt đất (để “bay” nhẹ), chỉnh 0 nếu muốn đứng đất
+
+local function currentPoint()
+    -- gom về ngay trước mặt nhân vật một chút
+    local hrp = getHRP()
+    return hrp.Position + hrp.CFrame.LookVector * 1.0
+end
+
+local function startClusterLoop(idsSet)
+    task.spawn(function()
+        while CLUSTERING do
+            local point = currentPoint()
+            -- Thử gom thật (server-side) nếu có Remote đặt vị trí
+            local okRemote = tryPlaceViaRemotes(point)
+            if not okRemote then
+                -- Fallback: ép local (client-side), gom cực nhỏ và giữ chặt
+                local jitter = Vector3.new((math.random() - 0.5) * LOCAL_EPS, 0, (math.random() - 0.5) * LOCAL_EPS)
+                forceSnapSelected(idsSet, point + Vector3.new(0, LOCAL_Y, 0) + jitter)
+            end
+            task.wait(CLUSTER_RATE)
+        end
+    end)
+end
+
+btnCluster.MouseButton1Click:Connect(function()
+    local ids = getSelectedIds()
+    if #ids == 0 then notify("Chưa chọn ID nào!", 3) return end
+
+    CLUSTERING = not CLUSTERING
+    if CLUSTERING then
+        btnCluster.Text = "DỪNG GOM"
+        notify("Bắt đầu gom liên tục (ưu tiên server-side, fallback ép local).", 3)
+        startClusterLoop(idsToSet(ids))
+    else
+        btnCluster.Text = "GOM PET"
+        notify("Đã dừng gom liên tục.", 3)
+    end
+end)
+
+------------------------------------------------
+-- ÉP MỘT PHÁT (one-shot) về điểm gần nhân vật
+------------------------------------------------
+btnForce.MouseButton1Click:Connect(function()
+    local ids = getSelectedIds()
+    if #ids == 0 then notify("Chưa chọn ID nào!", 3) return end
+
+    local point = currentPoint()
+    -- thử server trước
+    local okRemote = tryPlaceViaRemotes(point)
+    -- rồi ép local một phát (gom rất chặt)
+    local moved = forceSnapSelected(idsToSet(ids), point + Vector3.new(0, LOCAL_Y, 0))
+
+    if okRemote or moved > 0 then
+        notify(("Đã ép về 1 chỗ • remote=%s • moved=%d"):format(tostring(okRemote), moved), 3)
+    else
+        notify("Không ép được (server chặn dịch chuyển/không có Remote đặt vị trí).", 4)
+    end
+end)
+
+
+-- ========= LOOP: THU ngay → THẢ ngay → chờ S → lặp =========
+-- ========= LOOP: THU ngay → THẢ ngay → chờ S → lặp (có debug/độ trễ) =========
+local RUNNING = false
+
+local function parseS()
+    local v = tonumber(sBox.Text)
+    if v == nil then v = 5 end
+    if v < 0 then v = 0 end
+    if v > 120 then v = 120 end
+    sBox.Text = tostring(v)
+    return v
+end
+
+local function setRunning(on)
+    RUNNING = on
+    btnStart.Text = on and "DỪNG" or "BẮT ĐẦU"
+    btnStart.BackgroundColor3 = on and Color3.fromRGB(190,70,70) or Color3.fromRGB(70,170,90)
+    status.Text = on and "ĐANG CHẠY: THU → THẢ (ngay) → chờ S → lặp" or ("Sẵn sàng • R="..RADIUS)
+end
+
+local _startBusy = false
+btnStart.MouseButton1Click:Connect(function()
+    if _startBusy then return end
+    _startBusy = true
+
+    if RUNNING then
+        setRunning(false)
+        notify("Đã dừng vòng lặp.", 2)
+        _startBusy = false
+        return
+    end
+
+    -- lấy ID đang chọn
+    local ids = getSelectedIds()
+    if #ids == 0 then
+        notify("Chưa chọn ID nào!", 3)
+        _startBusy = false
+        return
+    end
+
+    -- đảm bảo đã có Remote
+    if (not Remotes.service) and (not Remotes.equipEv) and (not Remotes.unequipEv) then
+        findPetsRemotes()
+        if (not Remotes.service) and (not Remotes.equipEv) and (not Remotes.unequipEv) then
+            notify("Không tìm thấy Remote PET (Equip/Unequip).", 4)
+            _startBusy = false
+            return
+        end
+    end
+
+    local s = parseS()
+    setRunning(true)
+    notify(("Bắt đầu với %d ID • S=%ds"):format(#ids, s), 3)
+
+    task.spawn(function()
+        while RUNNING do
+            local curIds = getSelectedIds()
+            if #curIds == 0 then
+                notify("Đã hết ID được chọn, tự dừng.", 3)
+                setRunning(false)
+                break
+            end
+
+            -- B1) THU tất cả
+            status.Text = ("THU %d pet..."):format(#curIds)
+            local okUne = unequipAll(curIds)
+            print("[MyPet][LOOP] UnequipAll:", okUne, "count=", #curIds)
+            -- Độ trễ nhỏ cho server “nhảy trạng thái”
+            task.wait(0.15)
+
+            if not RUNNING then break end
+
+            -- B2) THẢ tất cả
+            status.Text = ("THẢ %d pet..."):format(#curIds)
+            local okEq = equipAll(curIds)
+            print("[MyPet][LOOP] EquipAll:", okEq, "count=", #curIds)
+
+            -- Nếu cả hai bước đều fail, báo & out (đỡ spam)
+            if (not okUne) and (not okEq) then
+                notify("Equip/Unequip đều KHÔNG thành công. Có thể payload Remote khác. Dừng vòng lặp.", 4)
+                setRunning(false)
+                break
+            end
+
+            -- B3) Chờ S giây rồi lặp
+            local hold = parseS()
+            if hold > 0 then
+                status.Text = ("Chờ %0.2fs rồi lặp..."):format(hold)
+                local t0 = os.clock()
+                while RUNNING and (os.clock() - t0) < hold do task.wait(0.05) end
+            end
+
+            -- Vòng tiếp theo: sẽ lại THU rồi THẢ
+        end
+        -- kết thúc vòng lặp
+        status.Text = ("Sẵn sàng • R=%d"):format(RADIUS)
+    end)
+
+    _startBusy = false
+end)
+
+notify("My-Pet Finder sẵn sàng. SCAN → chọn ID (hoặc 'Chọn tất cả') → dùng THU/THẢ/GOM/ÉP hoặc BẮT ĐẦU vòng S.", 3)
