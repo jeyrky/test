@@ -30,7 +30,7 @@ getgenv().CFG = {
 getgenv().TRI_GUIDS = {
     "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
     "{80437d63-3941-4869-ba68-986f7328d3c9}",
-    "{}",
+    "{3b59eff4-eb3c-4c5e-ba82-5ba6281c286a}",
     -- thêm bao nhiêu GUID tùy bạn, script sẽ thả đúng bấy nhiêu
 }
 getgenv().MOON_GUIDS = {
@@ -51,6 +51,16 @@ getgenv().MOON_GUIDS = {
     "{24da58ee-4734-4924-a63d-c2274fce99f2}",
     "{28cc0688-f133-4f5e-a9f0-63b9e9d047cc}",
     "{700e6c65-f352-4bea-9abc-e1dac0f37316}",
+    "{899f5d26-36f0-40e2-9e8e-bccc7ac12c14}",
+    "{a4d899b1-8fea-4636-a3e4-ba61a5c30e1f}",
+    "{8008570e-dcbf-4792-acc8-3d5ebcf4dc3e}",
+    "{a19d7489-37bd-4b93-b154-3fab4abf3a58}",
+    "{92187f59-9095-41d5-aef7-e8f16d732ed1}",
+    "{b215341f-7744-4ac2-9c02-4c56efe46a56}",
+    "{820c7557-eb2f-4788-8612-b0646075704d}",
+    "{}",
+
+   
 }
 -- (tuỳ chọn) GUID khác muốn recall chung:
 getgenv().EXTRA_GUIDS = { }
