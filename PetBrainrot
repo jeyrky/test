@@ -80,8 +80,8 @@ local followDistance = 1
 local checkInterval  = 5
 
 -- ⚠️ THAY allowedKeywords cũ bằng 2 danh sách dưới:
-local typeKeywords = { "Secret" }  -- hệ/rarity cần bắt
-local nameKeywords = { "Brainrot lucky", "Pipi Kiwwi" } -- TÊN pet cần bắt (thêm/bớt tùy ý)
+local typeKeywords = { "Secret", "Pipi Kiwwi", }  -- hệ/rarity cần bắt
+local nameKeywords = { "Brainrot lucky", } -- TÊN pet cần bắt (thêm/bớt tùy ý)
 
 local lastPet     = nil
 local startPos    = Vector3.new(-410.32, -6.50, 255.72)
