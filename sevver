@@ -1,6 +1,6 @@
 --[[  GROW A GARDEN – AUTO DROP/RECALL (REMOTE-ONLY, NO CLICK)
      • THẢ/THU 100% bằng PetsService:FireServer (EquipPet / UnequipPet)
-     • Tách GUID: Triceratops / Moon Cat
+     • TRI: thả theo đúng số GUID trong TRI_GUIDS (mặc định = tất cả)
      • Gom tụ: thả theo vòng tròn nhỏ ngay trước mặt
      • HUD: đếm giờ Triceratops (3:33), tự thả Moon khi còn 1:15
      • UI: BẮT ĐẦU AUTO / DỪNG MỌI HOẠT ĐỘNG
@@ -21,14 +21,19 @@ getgenv().CFG = {
     RECALL_PER_DELAY     = 0.06,       -- delay giữa mỗi lần Unequip (giây)
 
     LOOP_COOLDOWN_SEC    = 15,         -- chờ sau mỗi vòng
+
+    -- SỐ LƯỢNG TRI MUỐN THẢ: 0 = THẢ TẤT CẢ GUID TRONG TRI_GUIDS
+    TRI_DROP_COUNT       = 0,
 }
 
 -- ===== ĐIỀN GUID TẠI ĐÂY =====
 getgenv().TRI_GUIDS = {
     "{47cdba55-dcbc-4f40-8ea5-f00cff81ca55}",
+    "{80437d63-3941-4869-ba68-986f7328d3c9}",
+    "{}",
+    -- thêm bao nhiêu GUID tùy bạn, script sẽ thả đúng bấy nhiêu
 }
 getgenv().MOON_GUIDS = {
-    -- danh sách GUID Moon
     "{b04576d7-9498-4193-9db1-e86fb10fc5a0}",
     "{2ef864b3-3d9f-486f-bbaf-9ce45d911a5a}",
     "{31ee4294-0d7c-4993-813f-2ca605226f39}",
@@ -42,7 +47,10 @@ getgenv().MOON_GUIDS = {
     "{a6ec3033-d086-4630-8deb-afcf83d59ac4}",
     "{0305b311-1b64-4f63-8ecf-e1e1cbb772ea}",
     "{558c6035-2b22-40f1-a969-48fb9cf43a67}",
-    "{781b17ee-ecd4-42a7-b0dc-d49f3f156a2e}"
+    "{781b17ee-ecd4-42a7-b0dc-d49f3f156a2e}",
+    "{24da58ee-4734-4924-a63d-c2274fce99f2}",
+    "{28cc0688-f133-4f5e-a9f0-63b9e9d047cc}",
+    "{700e6c65-f352-4bea-9abc-e1dac0f37316}",
 }
 -- (tuỳ chọn) GUID khác muốn recall chung:
 getgenv().EXTRA_GUIDS = { }
@@ -118,12 +126,21 @@ local function buildRecallAll()
     return out
 end
 
--- API thả/thu
-local function DropTri(limitCount) return placeByGUIDList(getgenv().TRI_GUIDS,  limitCount or 1) end
-local function DropMoon()          return placeByGUIDList(getgenv().MOON_GUIDS, nil)            end
-local function RecallTri()         return recallList(getgenv().TRI_GUIDS)                       end
-local function RecallMoon()        return recallList(getgenv().MOON_GUIDS)                      end
-local function RecallAll()         return recallList(buildRecallAll())                          end
+-- ===== API thả/thu =====
+local function DropTri(limitCount)
+    -- ưu tiên tham số; nếu nil thì lấy theo CFG.TRI_DROP_COUNT (0 = thả tất cả)
+    local n = limitCount
+    if n == nil then
+        n = getgenv().CFG.TRI_DROP_COUNT
+        if n == 0 then n = nil end
+    end
+    return placeByGUIDList(getgenv().TRI_GUIDS, n)
+end
+
+local function DropMoon()          return placeByGUIDList(getgenv().MOON_GUIDS, nil) end
+local function RecallTri()         return recallList(getgenv().TRI_GUIDS)            end
+local function RecallMoon()        return recallList(getgenv().MOON_GUIDS)           end
+local function RecallAll()         return recallList(buildRecallAll())               end
 
 -- ===== HUD MINI (Đồng hồ Triceratops) =====
 local function createMiniTimer()
@@ -203,7 +220,8 @@ local function doOneCycle()
 
     if not autoEnabled then return end
     setStatus("THẢ TRICERATOPS (remote)...")
-    local triPlaced = DropTri(1)
+    -- GỌI KHÔNG TRUYỀN THAM SỐ -> DÙNG CFG.TRI_DROP_COUNT (0 = tất cả)
+    local triPlaced = DropTri()
     if triPlaced <= 0 then
         setStatus("Không có GUID Triceratops")
         triDeadline = nil
@@ -307,4 +325,4 @@ local function createSimpleUI()
 end
 
 createSimpleUI()
-print("[AutoPet] Remote-only drop/recall | Tri timer + Moon auto-drop | No clicks, no tools.")
+print("[AutoPet] Remote-only drop/recall | Tri = ALL GUID by default | Tri timer + Moon auto-drop | No clicks, no tools.")
