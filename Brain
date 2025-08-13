@@ -80,8 +80,8 @@ local followDistance = 1
 local checkInterval  = 5
 
 -- ⚠️ THAY allowedKeywords cũ bằng 2 danh sách dưới:
-local typeKeywords = { "Secret", "Rare"}  -- hệ/rarity cần bắt
-local nameKeywords = { "Brainrot lucky", } -- TÊN pet cần bắt (thêm/bớt tùy ý)
+local typeKeywords = { "Secret", "Rare" }    -- hệ/rarity cần bắt
+local nameKeywords = { "Brainrot lucky" }    -- TÊN pet cần bắt (thêm/bớt tùy ý)
 
 local lastPet     = nil
 local startPos    = Vector3.new(-410.32, -6.50, 255.72)
@@ -96,46 +96,61 @@ local function isInZone(pos)
 end
 
 -- ===========================
--- 🔎 findClosestPet() — BẢN MỚI: bắt theo hệ OR tên
+-- 🔎 findClosestPet() — BẮT THEO HỆ OR TÊN (có chuẩn hoá)
 -- ===========================
 local function findClosestPet()
-    local function containsAny(s, list)
-        if not s then return false end
-        local ls = string.lower(tostring(s))
-        for _,k in ipairs(list) do
-            if string.find(ls, string.lower(k), 1, true) then
+    -- chuẩn hoá chuỗi: bỏ RichText, gộp/trim khoảng trắng, hạ thường, bỏ ký tự trang trí
+    local function norm(s)
+        s = tostring(s or "")
+        s = s:gsub("<.->","")                              -- bỏ thẻ RichText <...>
+        s = s:gsub("%s+"," "):gsub("^%s+",""):gsub("%s+$","") -- gộp + trim space
+        s = s:lower()
+        s = s:gsub("[^\x20-\x7E]", "")                    -- bỏ emoji/ký tự lạ
+        return s
+    end
+
+    -- chuẩn hoá sẵn keyword
+    local nTypeKeys, nNameKeys = {}, {}
+    for _,k in ipairs(typeKeywords) do nTypeKeys[#nTypeKeys+1] = norm(k) end
+    for _,k in ipairs(nameKeywords) do nNameKeys[#nNameKeys+1] = norm(k) end
+
+    local function containsAnyNormalized(raw, keys)
+        if not raw or #keys == 0 then return false end
+        local s = norm(raw)
+        for _,k in ipairs(keys) do
+            if k ~= "" and s:find(k, 1, true) then
                 return true
             end
         end
         return false
     end
 
-    local function passByLabelText(txt)
+    local function passByText(txt)
         -- OR: khớp hệ HOẶC tên
-        return containsAny(txt, typeKeywords) or containsAny(txt, nameKeywords)
+        return containsAnyNormalized(txt, nTypeKeys) or containsAnyNormalized(txt, nNameKeys)
     end
 
-    local nearest, nearestDist = nil, math.huge
+    local nearest, bestDist = nil, math.huge
 
-    -- 1) Quét TextLabel như code cũ
+    -- 1) Ưu tiên TextLabel dựng trong world (dùng ContentText nếu có để bỏ RichText)
     for _, label in ipairs(workspace:GetDescendants()) do
         if label:IsA("TextLabel") then
-            local name = label.Text
-            if passByLabelText(name) then
+            local raw = (label.ContentText ~= nil) and label.ContentText or label.Text
+            if passByText(raw) then
                 local model = label:FindFirstAncestorOfClass("Model")
-                local root  = model and model:FindFirstChildWhichIsA("BasePart")
+                local root  = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
                 if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
                     local dist = (hrp.Position - root.Position).Magnitude
-                    if dist < nearestDist then
-                        nearest = { model = model, root = root }
-                        nearestDist = dist
+                    if dist < bestDist then
+                        bestDist = dist
+                        nearest  = { model = model, root = root }
                     end
                 end
             end
         end
     end
 
-    -- 2) Fallback: nếu map không dùng TextLabel, thử Model.Name / DisplayName (StringValue)
+    -- 2) Fallback: không có label khớp → thử Model.Name / các StringValue tên / label dưới Model
     if not nearest then
         for _, d in ipairs(workspace:GetDescendants()) do
             if d:IsA("Model") or d:IsA("BasePart") then
@@ -143,19 +158,32 @@ local function findClosestPet()
                 local root  = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
                 if model and root then
                     local ok = false
-                    if passByLabelText(model.Name) then
-                        ok = true
-                    else
-                        local sv = model:FindFirstChild("DisplayName") or model:FindFirstChild("Name")
-                        if sv and sv:IsA("StringValue") and passByLabelText(sv.Value) then
-                            ok = true
+                    -- Model.Name
+                    if passByText(model.Name) then ok = true end
+                    -- StringValue tên phổ biến
+                    if not ok then
+                        for _,cand in ipairs({"DisplayName","Name","Title","PetName","Label"}) do
+                            local sv = model:FindFirstChild(cand)
+                            if sv and sv:IsA("StringValue") and passByText(sv.Value) then
+                                ok = true; break
+                            end
                         end
                     end
+                    -- Label con trong BillboardGui/SurfaceGui gắn vào model
+                    if not ok then
+                        for _,gui in ipairs(model:GetDescendants()) do
+                            if gui:IsA("TextLabel") then
+                                local t = (gui.ContentText ~= nil) and gui.ContentText or gui.Text
+                                if passByText(t) then ok = true; break end
+                            end
+                        end
+                    end
+
                     if ok and isInZone(root.Position) then
                         local dist = (hrp.Position - root.Position).Magnitude
-                        if dist < nearestDist then
-                            nearest = { model = model, root = root }
-                            nearestDist = dist
+                        if dist < bestDist then
+                            bestDist = dist
+                            nearest  = { model = model, root = root }
                         end
                     end
                 end
@@ -218,7 +246,6 @@ task.spawn(function()
         end
     end
 end)
-
 
 -- ===========================
 -- Chống AFK nhẹ (giữ nguyên)
