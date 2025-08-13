@@ -1,0 +1,283 @@
+-- ===========================
+-- PERFORMANCE / VISUAL STRIPS
+-- ===========================
+local Lighting     = game:GetService("Lighting")
+local Terrain      = workspace:FindFirstChildOfClass("Terrain")
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local UserSettings = UserSettings():GetService("UserGameSettings")
+local VirtualInput = game:GetService("VirtualInputManager")
+
+local lp       = Players.LocalPlayer
+local char     = lp.Character or lp.CharacterAdded:Wait()
+local hrp      = char:WaitForChild("HumanoidRootPart")
+local humanoid = char:WaitForChild("Humanoid")
+
+-- Tắt GUI mặc định
+pcall(function()
+    game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+end)
+
+-- ⚙️ Tắt ánh sáng
+Lighting.GlobalShadows   = false
+Lighting.FogEnd          = 1000000
+Lighting.Brightness      = 0
+Lighting.OutdoorAmbient  = Color3.fromRGB(128, 128, 128)
+
+-- ⚙️ Terrain
+if Terrain then
+    Terrain.WaterWaveSize      = 0
+    Terrain.WaterWaveSpeed     = 0
+    Terrain.WaterReflectance   = 0
+    Terrain.WaterTransparency  = 1
+end
+
+-- ⚙️ Tắt hiệu ứng toàn map
+local function removeEffects(obj)
+    for _, v in pairs(obj:GetDescendants()) do
+        if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
+            v.Enabled = false
+        elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
+            v.Enabled = false
+        elseif v:IsA("Decal") then
+            v.Transparency = 1
+        elseif v:IsA("Texture") then
+            v:Destroy()
+        end
+    end
+end
+
+removeEffects(workspace)
+
+workspace.DescendantAdded:Connect(function(obj)
+    task.wait(0.1)
+    pcall(function()
+        if obj:IsA("Texture") then
+            obj:Destroy()
+        elseif obj:IsA("Decal") then
+            obj.Transparency = 1
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("PointLight") then
+            obj.Enabled = false
+        end
+    end)
+end)
+
+pcall(function()
+    UserSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+end)
+
+lp.CharacterAdded:Connect(function(c)
+    removeEffects(c)
+end)
+
+-- ===========================
+-- 🚀 Auto ăn PET "Secret" / theo TÊN
+-- ===========================
+
+local holdTime       = 3
+local restTime       = 0.7
+local followDistance = 1
+local checkInterval  = 5
+
+-- ⚠️ THAY allowedKeywords cũ bằng 2 danh sách dưới:
+local typeKeywords = { "Secret" }  -- hệ/rarity cần bắt
+local nameKeywords = { "Brainrot lucky", "Pipi Kiwwi" } -- TÊN pet cần bắt (thêm/bớt tùy ý)
+
+local lastPet     = nil
+local startPos    = Vector3.new(-410.32, -6.50, 255.72)
+local endPos      = Vector3.new(-411.93, -6.50, -137.21)
+local autoRunning = true
+
+local function isInZone(pos)
+    if not startPos or not endPos then return false end
+    local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
+    local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
+    return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
+end
+
+-- ===========================
+-- 🔎 findClosestPet() — BẢN MỚI: bắt theo hệ OR tên
+-- ===========================
+local function findClosestPet()
+    local function containsAny(s, list)
+        if not s then return false end
+        local ls = string.lower(tostring(s))
+        for _,k in ipairs(list) do
+            if string.find(ls, string.lower(k), 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function passByLabelText(txt)
+        -- OR: khớp hệ HOẶC tên
+        return containsAny(txt, typeKeywords) or containsAny(txt, nameKeywords)
+    end
+
+    local nearest, nearestDist = nil, math.huge
+
+    -- 1) Quét TextLabel như code cũ
+    for _, label in ipairs(workspace:GetDescendants()) do
+        if label:IsA("TextLabel") then
+            local name = label.Text
+            if passByLabelText(name) then
+                local model = label:FindFirstAncestorOfClass("Model")
+                local root  = model and model:FindFirstChildWhichIsA("BasePart")
+                if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
+                    local dist = (hrp.Position - root.Position).Magnitude
+                    if dist < nearestDist then
+                        nearest = { model = model, root = root }
+                        nearestDist = dist
+                    end
+                end
+            end
+        end
+    end
+
+    -- 2) Fallback: nếu map không dùng TextLabel, thử Model.Name / DisplayName (StringValue)
+    if not nearest then
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if d:IsA("Model") or d:IsA("BasePart") then
+                local model = d:IsA("Model") and d or d:FindFirstAncestorOfClass("Model")
+                local root  = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
+                if model and root then
+                    local ok = false
+                    if passByLabelText(model.Name) then
+                        ok = true
+                    else
+                        local sv = model:FindFirstChild("DisplayName") or model:FindFirstChild("Name")
+                        if sv and sv:IsA("StringValue") and passByLabelText(sv.Value) then
+                            ok = true
+                        end
+                    end
+                    if ok and isInZone(root.Position) then
+                        local dist = (hrp.Position - root.Position).Magnitude
+                        if dist < nearestDist then
+                            nearest = { model = model, root = root }
+                            nearestDist = dist
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nearest
+end
+
+local function pressE(seconds)
+    VirtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(seconds)
+    VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+local function holdEOnPet(pet)
+    local t0 = tick()
+    while tick() - t0 < 5 do
+        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then return end
+        local dist = (hrp.Position - pet.root.Position).Magnitude
+        if dist <= followDistance then break end
+        humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
+        task.wait(0.1)
+    end
+
+    local followConn
+    followConn = RunService.RenderStepped:Connect(function()
+        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
+            followConn:Disconnect()
+            return
+        end
+        local dist = (hrp.Position - pet.root.Position).Magnitude
+        if dist > followDistance then
+            humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
+        else
+            humanoid:MoveTo(hrp.Position)
+        end
+    end)
+
+    while pet.model:IsDescendantOf(workspace) and isInZone(pet.root.Position) do
+        pressE(holdTime)
+        task.wait(restTime)
+    end
+
+    if followConn then followConn:Disconnect() end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(checkInterval)
+        if autoRunning then
+            local pet = findClosestPet()
+            if pet and (not lastPet or pet.model ~= lastPet.model) then
+                lastPet = pet
+                holdEOnPet(pet)
+            elseif not pet then
+                lastPet = nil
+            end
+        end
+    end
+end)
+
+-- ===========================
+-- Tuần tra giữa 2 điểm (giữ nguyên theo bản cũ chuẩn)
+-- ===========================
+local function autoWalkBetweenPoints()
+    local function moveTo(pos)
+        local stepSize = 20
+        local currentPos = hrp.Position
+
+        while (currentPos - pos).Magnitude > 3 do
+            if not autoRunning then break end
+
+            local dir = (pos - currentPos).Unit
+            local nextPos = currentPos + dir * math.min(stepSize, (pos - currentPos).Magnitude)
+
+            humanoid:MoveTo(Vector3.new(nextPos.X, hrp.Position.Y, nextPos.Z))
+
+            local t0 = tick()
+            while (hrp.Position - nextPos).Magnitude > 3 and tick() - t0 < 2 do
+                task.wait(0.1)
+            end
+
+            currentPos = hrp.Position
+        end
+    end
+
+    task.spawn(function()
+        while true do
+            if autoRunning then
+                task.wait(1)
+                moveTo(endPos)
+                task.wait(1)
+                moveTo(startPos)
+            else
+                task.wait(1)
+            end
+        end
+    end)
+end
+
+autoWalkBetweenPoints()
+
+-- ===========================
+-- Chống AFK nhẹ (giữ nguyên)
+-- ===========================
+local function autoJumpAndPlay()
+    while true do
+        task.wait(30)
+        VirtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+        task.wait(0.1)
+        VirtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+
+        task.wait(15)
+
+        VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+        task.wait(0.1)
+        VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+
+        task.wait(45)
+    end
+end
+
+task.spawn(autoJumpAndPlay)
