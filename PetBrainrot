@@ -219,46 +219,6 @@ task.spawn(function()
     end
 end)
 
--- ===========================
--- Tuần tra giữa 2 điểm (giữ nguyên theo bản cũ chuẩn)
--- ===========================
-local function autoWalkBetweenPoints()
-    local function moveTo(pos)
-        local stepSize = 20
-        local currentPos = hrp.Position
-
-        while (currentPos - pos).Magnitude > 3 do
-            if not autoRunning then break end
-
-            local dir = (pos - currentPos).Unit
-            local nextPos = currentPos + dir * math.min(stepSize, (pos - currentPos).Magnitude)
-
-            humanoid:MoveTo(Vector3.new(nextPos.X, hrp.Position.Y, nextPos.Z))
-
-            local t0 = tick()
-            while (hrp.Position - nextPos).Magnitude > 3 and tick() - t0 < 2 do
-                task.wait(0.1)
-            end
-
-            currentPos = hrp.Position
-        end
-    end
-
-    task.spawn(function()
-        while true do
-            if autoRunning then
-                task.wait(1)
-                moveTo(endPos)
-                task.wait(1)
-                moveTo(startPos)
-            else
-                task.wait(1)
-            end
-        end
-    end)
-end
-
-autoWalkBetweenPoints()
 
 -- ===========================
 -- Chống AFK nhẹ (giữ nguyên)
