@@ -263,7 +263,7 @@ local function autoJumpAndPlay()
         task.wait(0.1)
         VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
 
-        task.wait(45)
+        task.wait(20)
     end
 end
 
