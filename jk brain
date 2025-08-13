@@ -1,0 +1,270 @@
+-- ===========================
+-- PERFORMANCE / VISUAL STRIPS
+-- ===========================
+local Lighting     = game:GetService("Lighting")
+local Terrain      = workspace:FindFirstChildOfClass("Terrain")
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local UserSettings = UserSettings():GetService("UserGameSettings")
+local VirtualInput = game:GetService("VirtualInputManager")
+
+local lp       = Players.LocalPlayer
+local char     = lp.Character or lp.CharacterAdded:Wait()
+local hrp      = char:WaitForChild("HumanoidRootPart")
+local humanoid = char:WaitForChild("Humanoid")
+
+-- Tắt GUI mặc định
+pcall(function()
+    game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+end)
+
+-- ⚙️ Tắt ánh sáng
+Lighting.GlobalShadows   = false
+Lighting.FogEnd          = 1000000
+Lighting.Brightness      = 0
+Lighting.OutdoorAmbient  = Color3.fromRGB(128, 128, 128)
+
+-- ⚙️ Terrain
+if Terrain then
+    Terrain.WaterWaveSize      = 0
+    Terrain.WaterWaveSpeed     = 0
+    Terrain.WaterReflectance   = 0
+    Terrain.WaterTransparency  = 1
+end
+
+-- ⚙️ Tắt hiệu ứng toàn map
+local function removeEffects(obj)
+    for _, v in pairs(obj:GetDescendants()) do
+        if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
+            v.Enabled = false
+        elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
+            v.Enabled = false
+        elseif v:IsA("Decal") then
+            v.Transparency = 1
+        elseif v:IsA("Texture") then
+            v:Destroy()
+        end
+    end
+end
+
+removeEffects(workspace)
+
+workspace.DescendantAdded:Connect(function(obj)
+    task.wait(0.1)
+    pcall(function()
+        if obj:IsA("Texture") then
+            obj:Destroy()
+        elseif obj:IsA("Decal") then
+            obj.Transparency = 1
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("PointLight") then
+            obj.Enabled = false
+        end
+    end)
+end)
+
+pcall(function()
+    UserSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+end)
+
+lp.CharacterAdded:Connect(function(c)
+    removeEffects(c)
+end)
+
+-- ===========================
+-- 🚀 Auto ăn PET "Secret" / theo TÊN
+-- ===========================
+
+local holdTime       = 2
+local restTime       = 0.7
+local followDistance = 1
+local checkInterval  = 2
+
+-- ⚠️ THAY allowedKeywords cũ bằng 2 danh sách dưới:
+local typeKeywords = { "Secret",}    -- hệ/rarity cần bắt
+local nameKeywords = { "Pipi Kiwi" }    -- TÊN pet cần bắt (thêm/bớt tùy ý)
+
+local lastPet     = nil
+local startPos    = Vector3.new(-410.32, -6.50, 255.72)
+local endPos      = Vector3.new(-411.93, -6.50, -137.21)
+local autoRunning = true
+
+local function isInZone(pos)
+    if not startPos or not endPos then return false end
+    local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
+    local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
+    return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
+end
+
+-- ===========================
+-- 🔎 findClosestPet() — BẮT THEO HỆ OR TÊN (có chuẩn hoá)
+-- ===========================
+local function findClosestPet()
+    -- chuẩn hoá chuỗi: bỏ RichText, gộp/trim khoảng trắng, hạ thường, bỏ ký tự trang trí
+    local function norm(s)
+        s = tostring(s or "")
+        s = s:gsub("<.->","")                              -- bỏ thẻ RichText <...>
+        s = s:gsub("%s+"," "):gsub("^%s+",""):gsub("%s+$","") -- gộp + trim space
+        s = s:lower()
+        s = s:gsub("[^\x20-\x7E]", "")                    -- bỏ emoji/ký tự lạ
+        return s
+    end
+
+    -- chuẩn hoá sẵn keyword
+    local nTypeKeys, nNameKeys = {}, {}
+    for _,k in ipairs(typeKeywords) do nTypeKeys[#nTypeKeys+1] = norm(k) end
+    for _,k in ipairs(nameKeywords) do nNameKeys[#nNameKeys+1] = norm(k) end
+
+    local function containsAnyNormalized(raw, keys)
+        if not raw or #keys == 0 then return false end
+        local s = norm(raw)
+        for _,k in ipairs(keys) do
+            if k ~= "" and s:find(k, 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function passByText(txt)
+        -- OR: khớp hệ HOẶC tên
+        return containsAnyNormalized(txt, nTypeKeys) or containsAnyNormalized(txt, nNameKeys)
+    end
+
+    local nearest, bestDist = nil, math.huge
+
+    -- 1) Ưu tiên TextLabel dựng trong world (dùng ContentText nếu có để bỏ RichText)
+    for _, label in ipairs(workspace:GetDescendants()) do
+        if label:IsA("TextLabel") then
+            local raw = (label.ContentText ~= nil) and label.ContentText or label.Text
+            if passByText(raw) then
+                local model = label:FindFirstAncestorOfClass("Model")
+                local root  = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
+                if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
+                    local dist = (hrp.Position - root.Position).Magnitude
+                    if dist < bestDist then
+                        bestDist = dist
+                        nearest  = { model = model, root = root }
+                    end
+                end
+            end
+        end
+    end
+
+    -- 2) Fallback: không có label khớp → thử Model.Name / các StringValue tên / label dưới Model
+    if not nearest then
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if d:IsA("Model") or d:IsA("BasePart") then
+                local model = d:IsA("Model") and d or d:FindFirstAncestorOfClass("Model")
+                local root  = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
+                if model and root then
+                    local ok = false
+                    -- Model.Name
+                    if passByText(model.Name) then ok = true end
+                    -- StringValue tên phổ biến
+                    if not ok then
+                        for _,cand in ipairs({"DisplayName","Name","Title","PetName","Label"}) do
+                            local sv = model:FindFirstChild(cand)
+                            if sv and sv:IsA("StringValue") and passByText(sv.Value) then
+                                ok = true; break
+                            end
+                        end
+                    end
+                    -- Label con trong BillboardGui/SurfaceGui gắn vào model
+                    if not ok then
+                        for _,gui in ipairs(model:GetDescendants()) do
+                            if gui:IsA("TextLabel") then
+                                local t = (gui.ContentText ~= nil) and gui.ContentText or gui.Text
+                                if passByText(t) then ok = true; break end
+                            end
+                        end
+                    end
+
+                    if ok and isInZone(root.Position) then
+                        local dist = (hrp.Position - root.Position).Magnitude
+                        if dist < bestDist then
+                            bestDist = dist
+                            nearest  = { model = model, root = root }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nearest
+end
+
+local function pressE(seconds)
+    VirtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(seconds)
+    VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+local function holdEOnPet(pet)
+    local t0 = tick()
+    while tick() - t0 < 5 do
+        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then return end
+        local dist = (hrp.Position - pet.root.Position).Magnitude
+        if dist <= followDistance then break end
+        humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
+        task.wait(0.1)
+    end
+
+    local followConn
+    followConn = RunService.RenderStepped:Connect(function()
+        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
+            followConn:Disconnect()
+            return
+        end
+        local dist = (hrp.Position - pet.root.Position).Magnitude
+        if dist > followDistance then
+            humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
+        else
+            humanoid:MoveTo(hrp.Position)
+        end
+    end)
+
+    while pet.model:IsDescendantOf(workspace) and isInZone(pet.root.Position) do
+        pressE(holdTime)
+        task.wait(restTime)
+    end
+
+    if followConn then followConn:Disconnect() end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(checkInterval)
+        if autoRunning then
+            local pet = findClosestPet()
+            if pet and (not lastPet or pet.model ~= lastPet.model) then
+                lastPet = pet
+                holdEOnPet(pet)
+            elseif not pet then
+                lastPet = nil
+            end
+        end
+    end
+end)
+
+-- ===========================
+-- Chống AFK nhẹ (giữ nguyên)
+-- ===========================
+local function autoJumpAndPlay()
+    while true do
+        task.wait(30)
+        VirtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+        task.wait(0.1)
+        VirtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+
+        task.wait(15)
+
+        VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+        task.wait(0.1)
+        VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+
+        task.wait(45)
+    end
+end
+
+task.spawn(autoJumpAndPlay)
