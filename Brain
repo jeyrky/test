@@ -1,108 +1,58 @@
---== LOWEST-PLAYER SERVER SCANNER (Executor-safe) ==--
--- Hỗ trợ: syn.request / http_request / krnl_request / fluxus.request / game:HttpGet
--- PC & Mobile executor đều dùng được
+-- 🔁 AUTO JOIN / REJOIN VIP SERVER (NO BUTTON)
+if not game:IsLoaded() then game.Loaded:Wait() end
 
-local Players          = game:GetService("Players")
-local TeleportService  = game:GetService("TeleportService")
-local LP               = Players.LocalPlayer
-local PLACE_ID         = game.PlaceId
+local Players  = game:GetService("Players")
+local TS       = game:GetService("TeleportService")
+local CoreGui  = game:GetService("CoreGui")
+local lp       = Players.LocalPlayer
 
--- === CHỌN CHẾ ĐỘ ===
--- Nếu muốn cố tìm server 0 người: đặt PREFER_ZERO = true
-local PREFER_ZERO      = false        -- true = ưu tiên 0 người; false = lấy server ít người nhất > 0
-local MAX_PAGES        = 50           -- tối đa phân trang (mỗi trang 100 server)
-local PAGE_DELAY       = 0.1          -- nghỉ giữa các trang để tránh rate limit
+-- === ĐIỀN LINK VIP SERVER TẠI ĐÂY ===
+local VIP_URL = "https://www.roblox.com/games/109983668079237/Steal-a-Brainrot?privateServerLinkCode=47610790923029385168357298494861"
 
--- ===== HTTP WRAPPER =====
-local function getRequestFunc()
-    return (syn and syn.request)
-        or (http_request)
-        or (krnl and krnl.request)
-        or (fluxus and fluxus.request)
-        or (request)
-        or nil
+-- Lấy PlaceId và Code từ link
+local function parseVip(url)
+    if type(url) ~= "string" then return nil, nil end
+    local placeStr = url:match("/games/(%d+)/")
+    local code = url:match("[?&]privateServerLinkCode=([%w_%-]+)")
+    local placeId = placeStr and tonumber(placeStr) or nil
+    return placeId, code
 end
 
-local function http_get_json(url)
-    -- Ưu tiên dùng request() của executor
-    local req = getRequestFunc()
-    if req then
-        local ok, resp = pcall(req, {Url = url, Method = "GET", Headers = {["User-Agent"] = "Roblox/Executor"}})
-        if ok and resp and resp.StatusCode == 200 and resp.Body then
-            local ok2, data = pcall(function() return game:GetService("HttpService"):JSONDecode(resp.Body) end)
-            if ok2 then return true, data end
-        end
-        return false, nil
-    end
-    -- Fallback: một số executor hook game:HttpGet trực tiếp
-    local ok, body = pcall(function() return game:HttpGet(url) end)
-    if ok and body then
-        local ok2, data = pcall(function() return game:GetService("HttpService"):JSONDecode(body) end)
-        if ok2 then return true, data end
-    end
-    return false, nil
+local PLACE_ID, VIP_CODE = parseVip(VIP_URL)
+if not PLACE_ID or not VIP_CODE or VIP_CODE == "" then
+    warn("[VIP Join] URL không hợp lệ. Kiểm tra lại VIP_URL!")
+    return
 end
 
--- ===== SCAN SERVER =====
-local function find_best_server()
-    local cursor = nil
-    local bestServer = nil
-    local bestCount  = math.huge
-    local foundZero  = nil
+local REJOINING = false
+local MAX_RETRIES = 6
 
-    for page = 1, MAX_PAGES do
-        local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100"):format(PLACE_ID)
-        if cursor then url = url .. "&cursor=" .. cursor end
+local function joinVip()
+    if REJOINING then return end
+    REJOINING = true
+    for i = 1, MAX_RETRIES do
+        local ok, err = pcall(function()
+            TS:TeleportToPrivateServer(PLACE_ID, VIP_CODE, { lp })
+        end)
+        if ok then return end
+        warn(("[VIP Join] Lỗi %d/%d: %s"):format(i, MAX_RETRIES, tostring(err)))
+        task.wait(0.8 + (i-1)*0.5)
+    end
+    REJOINING = false
+end
 
-        local ok, data = http_get_json(url)
-        if not ok or not data or not data.data then
-            -- lỗi mạng / rate limit -> dừng an toàn
-            break
-        end
+-- Vào lại ngay khi load script
+task.spawn(joinVip)
 
-        for _, server in ipairs(data.data) do
-            local playing = tonumber(server.playing) or 0
-            -- Ưu tiên 0 người nếu bật PREFER_ZERO
-            if PREFER_ZERO and playing == 0 then
-                foundZero = server
-                break
+-- Auto rejoin khi bị disconnect/kick/error
+do
+    local function hookPrompt(container)
+        container.DescendantAdded:Connect(function(d)
+            if typeof(d) ~= "Instance" then return end
+            local name = string.lower(d.Name or "")
+            if name:find("errorprompt") then
+                task.wait(0.4); joinVip(); return
             end
-            -- Nếu không bắt buộc 0 người: lấy ít người nhất nhưng >0 để tránh map lỗi
-            if not PREFER_ZERO and playing > 0 and playing < bestCount then
-                bestCount = playing
-                bestServer = server
-            end
-        end
-
-        if PREFER_ZERO and foundZero then
-            break
-        end
-
-        cursor = data.nextPageCursor
-        if not cursor or cursor == "null" then break end
-        task.wait(PAGE_DELAY)
-    end
-
-    if PREFER_ZERO then
-        return foundZero
-    else
-        return bestServer, bestCount
-    end
-end
-
--- ===== THỰC THI =====
-local server, count = find_best_server()
-
-if server and server.id then
-    local msg = PREFER_ZERO and "Đang vào server 0 người..." or ("Đang vào server có %d người..."):format(count or -1)
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {Title="Server Finder", Text=msg, Duration=3})
-    end)
-    print("[ServerFinder] "..msg, server.id)
-    TeleportService:TeleportToPlaceInstance(PLACE_ID, server.id, LP)
-else
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {Title="Server Finder", Text="Không tìm thấy server phù hợp.", Duration=4})
-    end)
-    warn("[ServerFinder] Không tìm thấy server phù hợp.")
-end
+            if d:IsA("TextLabel") then
+                local t = string.lower(d.Text or "")
+                if t:find("disconnected") or t:find("kicked") or t:find("unex
