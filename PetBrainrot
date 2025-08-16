@@ -7,24 +7,22 @@ local Players      = game:GetService("Players")
 local RunService   = game:GetService("RunService")
 local UserSettings = UserSettings():GetService("UserGameSettings")
 local VirtualInput = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+local CoreGui      = game:GetService("CoreGui")
+local StarterGui   = game:GetService("StarterGui")
 
 local lp       = Players.LocalPlayer
 local char     = lp.Character or lp.CharacterAdded:Wait()
 local hrp      = char:WaitForChild("HumanoidRootPart")
 local humanoid = char:WaitForChild("Humanoid")
 
--- Tắt GUI mặc định
-pcall(function()
-    game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
-end)
+pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false) end)
 
--- ⚙️ Tắt ánh sáng
 Lighting.GlobalShadows   = false
 Lighting.FogEnd          = 1000000
 Lighting.Brightness      = 0
 Lighting.OutdoorAmbient  = Color3.fromRGB(128, 128, 128)
 
--- ⚙️ Terrain
 if Terrain then
     Terrain.WaterWaveSize      = 0
     Terrain.WaterWaveSpeed     = 0
@@ -32,7 +30,6 @@ if Terrain then
     Terrain.WaterTransparency  = 1
 end
 
--- ⚙️ Tắt hiệu ứng toàn map
 local function removeEffects(obj)
     for _, v in pairs(obj:GetDescendants()) do
         if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
@@ -46,96 +43,125 @@ local function removeEffects(obj)
         end
     end
 end
-
 removeEffects(workspace)
-
 workspace.DescendantAdded:Connect(function(obj)
     task.wait(0.1)
     pcall(function()
-        if obj:IsA("Texture") then
-            obj:Destroy()
-        elseif obj:IsA("Decal") then
-            obj.Transparency = 1
+        if obj:IsA("Texture") then obj:Destroy()
+        elseif obj:IsA("Decal") then obj.Transparency = 1
         elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("PointLight") then
             obj.Enabled = false
         end
     end)
 end)
-
-pcall(function()
-    UserSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
-end)
-
-lp.CharacterAdded:Connect(function(c)
-    removeEffects(c)
-end)
+pcall(function() UserSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1 end)
+lp.CharacterAdded:Connect(function(c) removeEffects(c) end)
 
 -- ===========================
--- 🚀 Auto ăn PET "Secret" / theo TÊN
+-- 🚀 Auto ăn PET theo HỆ/TÊN trong vùng quét
 -- ===========================
-
-local holdTime       = 3
+local holdTime       = 2
 local restTime       = 0.7
 local followDistance = 1
-local checkInterval  = 5
+local checkInterval  = 2
 
--- ⚠️ THAY allowedKeywords cũ bằng 2 danh sách dưới:
-local typeKeywords = { "Secret", "Pipi Kiwwi"}  -- hệ/rarity cần bắt
-local nameKeywords = { "Brainrot lucky", } -- TÊN pet cần bắt (thêm/bớt tùy ý)
+-- Lọc theo hệ / tên
+local typeKeywords = { "Secret", "Epic" }  -- thêm "Epic", "Legendary", ... nếu muốn
+local nameKeywords = { "Pipi Kiwi" }        -- điền tên pet cần bắt (chuỗi rỗng = bỏ qua)
 
 local lastPet     = nil
-local startPos    = Vector3.new(-410.32, -6.50, 255.72)
-local endPos      = Vector3.new(-411.93, -6.50, -137.21)
-local autoRunning = true
+local startPos    = Vector3.new(-410.32, -6.50, 255.72)   -- fallback cũ
+local endPos      = Vector3.new(-411.93, -6.50, -137.21)  -- fallback cũ
 
-local function isInZone(pos)
-    if not startPos or not endPos then return false end
+-- === 4 góc (ưu tiên dùng khi đã set ≥2 góc) ===
+local corners = { TL=nil, TR=nil, BL=nil, BR=nil }  -- Góc 1..4 = TL,TR,BL,BR
+
+-- Mặc định: CHƯA chạy -> phải bấm "Bắt đầu"
+local autoRunning = false
+
+-- Helpers vùng
+local function cornersBBox()
+    local xs, zs = {}, {}
+    for _,v in pairs(corners) do
+        if typeof(v) == "Vector3" then
+            xs[#xs+1] = v.X
+            zs[#zs+1] = v.Z
+        end
+    end
+    if #xs < 2 or #zs < 2 then return nil end
+    local minX, maxX = math.huge, -math.huge
+    local minZ, maxZ = math.huge, -math.huge
+    for _,x in ipairs(xs) do if x < minX then minX = x end; if x > maxX then maxX = x end end
+    for _,z in ipairs(zs) do if z < minZ then minZ = z end; if z > maxZ then maxZ = z end end
+    return minX, maxX, minZ, maxZ
+end
+local function fallbackBBox()
+    if not startPos or not endPos then return nil end
     local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
     local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
+    return minX, maxX, minZ, maxZ
+end
+local function activeBBox()
+    return cornersBBox() or fallbackBBox()
+end
+local function isInZone(pos)
+    local minX, maxX, minZ, maxZ = activeBBox()
+    if not minX then return false end
     return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
 end
 
--- ===========================
--- 🔎 findClosestPet() — BẢN MỚI: bắt theo hệ OR tên
--- ===========================
+-- Chuẩn hoá & lọc
+local function norm(s)
+    s = tostring(s or "")
+    s = s:gsub("<.->","")
+    s = s:gsub("%s+"," "):gsub("^%s+",""):gsub("%s+$","")
+    s = s:lower()
+    s = s:gsub("[^\x20-\x7E]", "")
+    return s
+end
+local nTypeKeys, nNameKeys = {}, {}
+local function refreshKeys()
+    nTypeKeys, nNameKeys = {}, {}
+    for _,k in ipairs(typeKeywords) do nTypeKeys[#nTypeKeys+1] = norm(k) end
+    for _,k in ipairs(nameKeywords) do nNameKeys[#nNameKeys+1] = norm(k) end
+end
+refreshKeys()
+
+local function containsAnyNormalized(raw, keys)
+    if not raw or #keys == 0 then return false end
+    local s = norm(raw)
+    for _,k in ipairs(keys) do
+        if k ~= "" and s:find(k, 1, true) then return true end
+    end
+    return false
+end
+local function passByText(txt)
+    return containsAnyNormalized(txt, nTypeKeys) or containsAnyNormalized(txt, nNameKeys)
+end
+
+-- Tìm pet gần nhất trong vùng
 local function findClosestPet()
-    local function containsAny(s, list)
-        if not s then return false end
-        local ls = string.lower(tostring(s))
-        for _,k in ipairs(list) do
-            if string.find(ls, string.lower(k), 1, true) then
-                return true
-            end
-        end
-        return false
-    end
+    local nearest, bestDist = nil, math.huge
 
-    local function passByLabelText(txt)
-        -- OR: khớp hệ HOẶC tên
-        return containsAny(txt, typeKeywords) or containsAny(txt, nameKeywords)
-    end
-
-    local nearest, nearestDist = nil, math.huge
-
-    -- 1) Quét TextLabel như code cũ
+    -- Ưu tiên TextLabel
     for _, label in ipairs(workspace:GetDescendants()) do
         if label:IsA("TextLabel") then
-            local name = label.Text
-            if passByLabelText(name) then
+            local raw = (label.ContentText ~= nil) and label.ContentText or label.Text
+            if passByText(raw) then
                 local model = label:FindFirstAncestorOfClass("Model")
-                local root  = model and model:FindFirstChildWhichIsA("BasePart")
+                local root  = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
                 if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
                     local dist = (hrp.Position - root.Position).Magnitude
-                    if dist < nearestDist then
-                        nearest = { model = model, root = root }
-                        nearestDist = dist
+                    if dist < bestDist then
+                        bestDist = dist
+                        nearest  = { model = model, root = root }
                     end
                 end
             end
         end
     end
 
-    -- 2) Fallback: nếu map không dùng TextLabel, thử Model.Name / DisplayName (StringValue)
+    -- Fallback: Model.Name / StringValue / label con
     if not nearest then
         for _, d in ipairs(workspace:GetDescendants()) do
             if d:IsA("Model") or d:IsA("BasePart") then
@@ -143,19 +169,26 @@ local function findClosestPet()
                 local root  = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
                 if model and root then
                     local ok = false
-                    if passByLabelText(model.Name) then
-                        ok = true
-                    else
-                        local sv = model:FindFirstChild("DisplayName") or model:FindFirstChild("Name")
-                        if sv and sv:IsA("StringValue") and passByLabelText(sv.Value) then
-                            ok = true
+                    if passByText(model.Name) then ok = true end
+                    if not ok then
+                        for _,cand in ipairs({"DisplayName","Name","Title","PetName","Label"}) do
+                            local sv = model:FindFirstChild(cand)
+                            if sv and sv:IsA("StringValue") and passByText(sv.Value) then ok = true break end
+                        end
+                    end
+                    if not ok then
+                        for _,gui in ipairs(model:GetDescendants()) do
+                            if gui:IsA("TextLabel") then
+                                local t = (gui.ContentText ~= nil) and gui.ContentText or gui.Text
+                                if passByText(t) then ok = true break end
+                            end
                         end
                     end
                     if ok and isInZone(root.Position) then
                         local dist = (hrp.Position - root.Position).Magnitude
-                        if dist < nearestDist then
-                            nearest = { model = model, root = root }
-                            nearestDist = dist
+                        if dist < bestDist then
+                            bestDist = dist
+                            nearest  = { model = model, root = root }
                         end
                     end
                 end
@@ -166,6 +199,7 @@ local function findClosestPet()
     return nearest
 end
 
+-- Giữ phím E
 local function pressE(seconds)
     VirtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
     task.wait(seconds)
@@ -173,6 +207,7 @@ local function pressE(seconds)
 end
 
 local function holdEOnPet(pet)
+    -- Tiến lại gần tối đa 5 giây
     local t0 = tick()
     while tick() - t0 < 5 do
         if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then return end
@@ -182,11 +217,11 @@ local function holdEOnPet(pet)
         task.wait(0.1)
     end
 
+    -- Theo pet di chuyển
     local followConn
     followConn = RunService.RenderStepped:Connect(function()
         if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
-            followConn:Disconnect()
-            return
+            followConn:Disconnect(); return
         end
         local dist = (hrp.Position - pet.root.Position).Magnitude
         if dist > followDistance then
@@ -196,6 +231,7 @@ local function holdEOnPet(pet)
         end
     end)
 
+    -- Giữ E theo chu kỳ
     while pet.model:IsDescendantOf(workspace) and isInZone(pet.root.Position) do
         pressE(holdTime)
         task.wait(restTime)
@@ -204,6 +240,7 @@ local function holdEOnPet(pet)
     if followConn then followConn:Disconnect() end
 end
 
+-- Vòng quét chính (chỉ chạy khi autoRunning = true)
 task.spawn(function()
     while true do
         task.wait(checkInterval)
@@ -219,25 +256,212 @@ task.spawn(function()
     end
 end)
 
-
 -- ===========================
--- Chống AFK nhẹ (giữ nguyên)
+-- Chống AFK nhẹ
 -- ===========================
-local function autoJumpAndPlay()
+task.spawn(function()
     while true do
-        task.wait(30)
+        task.wait(10)
         VirtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
         task.wait(0.1)
         VirtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-
-        task.wait(15)
-
+        task.wait(5)
         VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
         task.wait(0.1)
         VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-
-        task.wait(45)
+        task.wait(20)
     end
+end)
+
+-- ===========================
+-- 📱 MOBILE UI: GÓC 1–4 + START/STOP + XOÁ TỌA ĐỘ
+-- ===========================
+local function parentGui()
+    if gethui then local ok,g=pcall(gethui); if ok and g then return g end end
+    return CoreGui
 end
 
-task.spawn(autoJumpAndPlay)
+local function makePanel()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "ZoneButtonsUI"
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.IgnoreGuiInset = true
+    gui.Parent = parentGui()
+
+    local panel = Instance.new("Frame")
+    panel.Name = "Panel"
+    panel.Size = UDim2.fromOffset(230, 300)
+    panel.Position = UDim2.new(0, 20, 0.5, -150)
+    panel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    panel.BackgroundTransparency = 0.1
+    panel.BorderSizePixel = 0
+    panel.Active = true
+    panel.ZIndex = 10
+    panel.Parent = gui
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+    local header = Instance.new("TextLabel")
+    header.Size = UDim2.new(1, -40, 0, 28)
+    header.Position = UDim2.new(0, 12, 0, 8)
+    header.BackgroundTransparency = 1
+    header.Text = "Scan Zone"
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 18
+    header.TextColor3 = Color3.fromRGB(230,230,230)
+    header.ZIndex = 11
+    header.Parent = panel
+
+    local toggleUiBtn = Instance.new("TextButton")
+    toggleUiBtn.Size = UDim2.fromOffset(24,24)
+    toggleUiBtn.Position = UDim2.new(1, -30, 0, 8)
+    toggleUiBtn.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    toggleUiBtn.Text = "×"
+    toggleUiBtn.Font = Enum.Font.GothamBold
+    toggleUiBtn.TextSize = 18
+    toggleUiBtn.TextColor3 = Color3.fromRGB(220,220,220)
+    toggleUiBtn.ZIndex = 12
+    toggleUiBtn.Active = true
+    toggleUiBtn.Parent = panel
+    Instance.new("UICorner", toggleUiBtn).CornerRadius = UDim.new(0,6)
+    toggleUiBtn.MouseButton1Click:Connect(function() gui.Enabled = not gui.Enabled end)
+
+    -- Drag panel
+    do
+        local dragging, dragStart, startPos
+        header.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = panel.Position
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then dragging = false end
+                end)
+            end
+        end)
+        header.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                if dragging then
+                    local delta = input.Position - dragStart
+                    panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                end
+            end
+        end)
+    end
+
+    local body = Instance.new("Frame")
+    body.Size = UDim2.new(1, -24, 1, -48)
+    body.Position = UDim2.new(0, 12, 0, 44)
+    body.BackgroundTransparency = 1
+    body.Active = true
+    body.ZIndex = 10
+    body.Parent = panel
+
+    local list = Instance.new("UIListLayout")
+    list.Parent = body
+    list.Padding = UDim.new(0,8)
+
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(1, 0, 0, 24)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextSize = 14
+    statusLbl.TextColor3 = Color3.fromRGB(200,200,200)
+    statusLbl.Text = "Góc đã lưu: 0/4 | Auto: OFF | Box: N/A"
+    statusLbl.ZIndex = 11
+    statusLbl.Parent = body
+
+    local COLOR_DEFAULT = Color3.fromRGB(35,35,35)
+    local COLOR_ACTIVE  = Color3.fromRGB(36,140,60)
+    local COLOR_TEXT    = Color3.fromRGB(230,230,230)
+
+    local function mkBtn(text)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, 0, 0, 40)       -- tăng chiều cao cho mobile
+        b.BackgroundColor3 = COLOR_DEFAULT
+        b.Text = text
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 16
+        b.TextColor3 = COLOR_TEXT
+        b.AutoButtonColor = true
+        b.Active = true
+        b.ZIndex = 12
+        b.Parent = body
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
+        return b
+    end
+
+    local cornerKey = { [1]="TL", [2]="TR", [3]="BL", [4]="BR" }
+    local btnCorner = {
+        mkBtn("Góc 1"),
+        mkBtn("Góc 2"),
+        mkBtn("Góc 3"),
+        mkBtn("Góc 4"),
+    }
+    local startStop = mkBtn("▶️  Bắt đầu") -- vì autoRunning=false
+    local clearAll  = mkBtn("🗑  Xoá toạ độ")
+
+    local function countCorners()
+        local n=0; for _,v in pairs(corners) do if typeof(v)=="Vector3" then n=n+1 end end; return n
+    end
+    local function bboxTxt()
+        local b = {activeBBox()}
+        if not b[1] then return "N/A" end
+        return ("[%.1f, %.1f]x[%.1f, %.1f]"):format(b[1],b[2],b[3],b[4])
+    end
+    local function styleCornerButtons()
+        for i=1,4 do
+            local key   = cornerKey[i]
+            local saved = typeof(corners[key]) == "Vector3"
+            local newBg = saved and COLOR_ACTIVE or COLOR_DEFAULT
+            local newTx = saved and ("Góc "..i.." ✓") or ("Góc "..i)
+            if btnCorner[i].BackgroundColor3 ~= newBg then
+                TweenService:Create(btnCorner[i], TweenInfo.new(0.12), {BackgroundColor3 = newBg}):Play()
+            end
+            btnCorner[i].Text = newTx
+        end
+    end
+    local function updateStatus()
+        styleCornerButtons()
+        statusLbl.Text = string.format("Góc đã lưu: %d/4 | Auto: %s | Box: %s",
+            countCorners(), autoRunning and "ON" or "OFF", bboxTxt())
+        startStop.Text = autoRunning and "⏸  Dừng" or "▶️  Bắt đầu"
+    end
+
+    -- Lưu từng góc theo vị trí hiện tại
+    for i=1,4 do
+        btnCorner[i].MouseButton1Click:Connect(function()
+            if hrp and hrp.Position then
+                corners[cornerKey[i]] = hrp.Position
+                TweenService:Create(btnCorner[i], TweenInfo.new(0.07), {BackgroundColor3 = Color3.fromRGB(60,60,60)}):Play()
+                task.delay(0.12, function() styleCornerButtons() end)
+                updateStatus()
+            end
+        end)
+    end
+
+    -- Bật/Tắt auto
+    startStop.MouseButton1Click:Connect(function()
+        autoRunning = not autoRunning
+        TweenService:Create(startStop, TweenInfo.new(0.07), {BackgroundColor3 = Color3.fromRGB(60,60,60)}):Play()
+        task.delay(0.12, function()
+            TweenService:Create(startStop, TweenInfo.new(0.15), {BackgroundColor3 = COLOR_DEFAULT}):Play()
+            updateStatus()
+        end)
+    end)
+
+    -- Xoá toàn bộ toạ độ
+    clearAll.MouseButton1Click:Connect(function()
+        corners.TL, corners.TR, corners.BL, corners.BR = nil, nil, nil, nil
+        TweenService:Create(clearAll, TweenInfo.new(0.07), {BackgroundColor3 = Color3.fromRGB(60,60,60)}):Play()
+        task.delay(0.12, function()
+            TweenService:Create(clearAll, TweenInfo.new(0.15), {BackgroundColor3 = COLOR_DEFAULT}):Play()
+            updateStatus()
+        end)
+    end)
+
+    updateStatus()
+    return gui
+end
+makePanel()
