@@ -81,7 +81,7 @@ local checkInterval  = 2
 
 -- ⚠️ THAY allowedKeywords cũ bằng 2 danh sách dưới:
 local typeKeywords = { "Secret",}    -- hệ/rarity cần bắt
-local nameKeywords = { "Pipi Kiwi" }    -- TÊN pet cần bắt (thêm/bớt tùy ý)
+local nameKeywords = { "" }    -- TÊN pet cần bắt (thêm/bớt tùy ý)
 
 local lastPet     = nil
 local startPos    = Vector3.new(-410.32, -6.50, 255.72)
