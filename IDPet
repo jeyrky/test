@@ -1,4 +1,4 @@
--- 🧩 UNEQUIP → AUTO COPY + DANH SÁCH GUID (8 dòng + cuộn + X đóng + copy tất cả)
+-- 🧩 UNEQUIP → AUTO COPY + DANH SÁCH GUID (8 dòng + cuộn + X đóng + copy tất cả + Xoá/Load lại + DỪNG)
 
 local Players = game:GetService("Players")
 local RS      = game:GetService("ReplicatedStorage")
@@ -21,6 +21,10 @@ local function toast(t1, t2, dur)
 end
 
 local function cleanGuid(s) return (tostring(s):gsub("[{}]", "")) end
+local function formatGuidQuotedBraced(raw)  -- -> "{xxxxxxxx-...}"
+    local g = cleanGuid(raw)
+    return string.format('"{%s}"', g)
+end
 
 -- ========= GUI =========
 local gui = Instance.new("ScreenGui")
@@ -28,9 +32,8 @@ gui.Name = "GUIDListSniffer"
 gui.ResetOnSpawn = false
 gui.Parent = LP:WaitForChild("PlayerGui")
 
--- ~ 8 dòng * 28px + padding + header ≈ 320px
 local root = Instance.new("Frame")
-root.Size = UDim2.fromOffset(380, 320)
+root.Size = UDim2.fromOffset(460, 320)
 root.Position = UDim2.new(0, 10, 1, -330)
 root.BackgroundColor3 = Color3.fromRGB(24,24,24)
 root.BackgroundTransparency = 0.15
@@ -40,13 +43,13 @@ Instance.new("UICorner", root).CornerRadius = UDim.new(0,10)
 
 local header = Instance.new("TextLabel")
 header.BackgroundTransparency = 1
-header.Size = UDim2.new(1, -90, 0, 26) -- chừa nút
+header.Size = UDim2.new(1, -170, 0, 26)
 header.Position = UDim2.new(0, 8, 0, 6)
 header.Font = Enum.Font.GothamBold
 header.TextSize = 14
 header.TextXAlignment = Enum.TextXAlignment.Left
 header.TextColor3 = Color3.fromRGB(255,255,255)
-header.Text = "Unequip GUID (ấn vào dòng để copy lại)"
+header.Text = 'Unequip GUID (ấn để copy, định dạng "{xxxx}")'
 header.Parent = root
 
 -- nút X đóng
@@ -65,17 +68,41 @@ btnClose.MouseButton1Click:Connect(function()
     toast("Đã đóng bảng GUID", "", 2)
 end)
 
--- nút copy tất cả
+-- nút Copy tất cả
 local btnCopyAll = Instance.new("TextButton")
-btnCopyAll.Size = UDim2.fromOffset(80, 24)
-btnCopyAll.Position = UDim2.new(1, -120, 0, 6)
+btnCopyAll.Size = UDim2.fromOffset(90, 24)
+btnCopyAll.Position = UDim2.new(1, -330, 0, 6)
 btnCopyAll.BackgroundColor3 = Color3.fromRGB(35,122,255)
 btnCopyAll.TextColor3 = Color3.new(1,1,1)
 btnCopyAll.Font = Enum.Font.GothamSemibold
 btnCopyAll.TextSize = 12
-btnCopyAll.Text = "Copy all"
+btnCopyAll.Text = "Copy tất cả"
 btnCopyAll.Parent = root
 Instance.new("UICorner", btnCopyAll).CornerRadius = UDim.new(0,6)
+
+-- nút Xoá / Load lại
+local btnClear = Instance.new("TextButton")
+btnClear.Size = UDim2.fromOffset(110, 24)
+btnClear.Position = UDim2.new(1, -230, 0, 6)
+btnClear.BackgroundColor3 = Color3.fromRGB(90,90,90)
+btnClear.TextColor3 = Color3.new(1,1,1)
+btnClear.Font = Enum.Font.GothamSemibold
+btnClear.TextSize = 12
+btnClear.Text = "Xoá / Load lại"
+btnClear.Parent = root
+Instance.new("UICorner", btnClear).CornerRadius = UDim.new(0,6)
+
+-- nút DỪNG
+local btnStop = Instance.new("TextButton")
+btnStop.Size = UDim2.fromOffset(80, 24)
+btnStop.Position = UDim2.new(1, -110, 0, 6)
+btnStop.BackgroundColor3 = Color3.fromRGB(200,70,70)
+btnStop.TextColor3 = Color3.new(1,1,1)
+btnStop.Font = Enum.Font.GothamBold
+btnStop.TextSize = 12
+btnStop.Text = "DỪNG"
+btnStop.Parent = root
+Instance.new("UICorner", btnStop).CornerRadius = UDim.new(0,6)
 
 -- danh sách GUID
 local sc = Instance.new("ScrollingFrame")
@@ -96,12 +123,12 @@ layout.Parent = sc
 
 -- lưu danh sách GUID
 local guidList = {}
+local isRunning = true  -- trạng thái auto copy
 
-local function addRow(guidStr)
-    table.insert(guidList, guidStr)
+local function addRow(formattedGuid)
+    table.insert(guidList, formattedGuid)
 
     local row = Instance.new("TextButton")
-    row.AutoButtonColor = true
     row.Size = UDim2.new(1, -6, 0, 28)
     row.BackgroundColor3 = Color3.fromRGB(32,32,32)
     row.BorderSizePixel = 0
@@ -109,16 +136,15 @@ local function addRow(guidStr)
     row.Font = Enum.Font.Code
     row.TextSize = 12
     row.TextXAlignment = Enum.TextXAlignment.Left
-    row.Text = "  " .. guidStr
+    row.Text = "  " .. formattedGuid
     row.Parent = sc
     Instance.new("UICorner", row).CornerRadius = UDim.new(0,6)
 
     row.MouseButton1Click:Connect(function()
-        safeClipboard(guidStr)
-        toast("Đã copy GUID", guidStr, 2)
+        safeClipboard(formattedGuid)
+        toast("Đã copy GUID", formattedGuid, 2)
     end)
 
-    -- cập nhật canvas
     task.defer(function()
         sc.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 8)
         if layout.AbsoluteContentSize.Y > sc.AbsoluteWindowSize.Y then
@@ -127,7 +153,17 @@ local function addRow(guidStr)
     end)
 end
 
--- nút copy tất cả hoạt động
+-- Clear danh sách
+btnClear.MouseButton1Click:Connect(function()
+    table.clear(guidList)
+    for _, child in ipairs(sc:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    sc.CanvasSize = UDim2.new(0,0,0,0)
+    toast("Đã xoá danh sách", "", 2)
+end)
+
+-- Copy tất cả
 btnCopyAll.MouseButton1Click:Connect(function()
     if #guidList == 0 then
         toast("Chưa có GUID", "", 2)
@@ -138,23 +174,29 @@ btnCopyAll.MouseButton1Click:Connect(function()
     toast("Đã copy tất cả GUID", "", 2)
 end)
 
+-- Nút DỪNG
+btnStop.MouseButton1Click:Connect(function()
+    isRunning = false
+    toast("Đã dừng auto copy", "", 3)
+end)
+
 -- ========= HOOK =========
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local method = getnamecallmethod()
     local args = { ... }
 
-    if self == PetsService and method == "FireServer" and not checkcaller() then
+    if isRunning and self == PetsService and method == "FireServer" and not checkcaller() then
         if args[1] == "UnequipPet" and typeof(args[2]) == "string" then
-            local guid = cleanGuid(args[2])
-            safeClipboard(guid)
-            toast("Đã copy GUID", guid, 2)
-            addRow(guid)
-            print("[GUID] UnequipPet -> "..guid)
+            local formatted = formatGuidQuotedBraced(args[2])
+            safeClipboard(formatted)
+            toast("Đã copy GUID", formatted, 2)
+            addRow(formatted)
+            print("[GUID] UnequipPet -> "..formatted)
         end
     end
 
     return oldNamecall(self, ...)
 end))
 
-toast("GUID list bật", "Thu pet sẽ auto copy + thêm vào danh sách", 4)
+toast("GUID list bật", 'Thu pet sẽ auto copy + thêm vào danh sách (ấn DỪNG để tạm ngừng)', 4)
