@@ -21,7 +21,7 @@ local function toast(t1, t2, dur)
 end
 
 local function cleanGuid(s) return (tostring(s):gsub("[{}]", "")) end
-local function formatGuidQuotedBraced(raw)  -- -> "{xxxxxxxx-...}"
+local function formatGuidQuotedBraced(raw)  -- -> "{xxxxxxxx-...},"
     local g = cleanGuid(raw)
     return string.format('"{%s}"', g)
 end
