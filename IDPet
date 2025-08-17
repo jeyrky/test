@@ -1,4 +1,4 @@
--- 🧩 UNEQUIP → AUTO COPY + DANH SÁCH GUID (8 dòng + cuộn + X đóng + copy tất cả + Xoá/Load lại + DỪNG)
+-- 🧩 UNEQUIP → AUTO COPY + DANH SÁCH GUID (8 dòng + cuộn + X đóng + copy tất cả + Xoá/Load lại + DỪNG/TIẾP TỤC)
 
 local Players = game:GetService("Players")
 local RS      = game:GetService("ReplicatedStorage")
@@ -92,17 +92,17 @@ btnClear.Text = "Xoá / Load lại"
 btnClear.Parent = root
 Instance.new("UICorner", btnClear).CornerRadius = UDim.new(0,6)
 
--- nút DỪNG
-local btnStop = Instance.new("TextButton")
-btnStop.Size = UDim2.fromOffset(80, 24)
-btnStop.Position = UDim2.new(1, -110, 0, 6)
-btnStop.BackgroundColor3 = Color3.fromRGB(200,70,70)
-btnStop.TextColor3 = Color3.new(1,1,1)
-btnStop.Font = Enum.Font.GothamBold
-btnStop.TextSize = 12
-btnStop.Text = "DỪNG"
-btnStop.Parent = root
-Instance.new("UICorner", btnStop).CornerRadius = UDim.new(0,6)
+-- nút DỪNG / TIẾP TỤC (toggle)
+local btnToggle = Instance.new("TextButton")
+btnToggle.Size = UDim2.fromOffset(100, 24)
+btnToggle.Position = UDim2.new(1, -120, 0, 6)
+btnToggle.BackgroundColor3 = Color3.fromRGB(200,70,70)
+btnToggle.TextColor3 = Color3.new(1,1,1)
+btnToggle.Font = Enum.Font.GothamBold
+btnToggle.TextSize = 12
+btnToggle.Text = "DỪNG"
+btnToggle.Parent = root
+Instance.new("UICorner", btnToggle).CornerRadius = UDim.new(0,6)
 
 -- danh sách GUID
 local sc = Instance.new("ScrollingFrame")
@@ -174,10 +174,18 @@ btnCopyAll.MouseButton1Click:Connect(function()
     toast("Đã copy tất cả GUID", "", 2)
 end)
 
--- Nút DỪNG
-btnStop.MouseButton1Click:Connect(function()
-    isRunning = false
-    toast("Đã dừng auto copy", "", 3)
+-- Toggle DỪNG/TIẾP TỤC
+btnToggle.MouseButton1Click:Connect(function()
+    isRunning = not isRunning
+    if isRunning then
+        btnToggle.Text = "DỪNG"
+        btnToggle.BackgroundColor3 = Color3.fromRGB(200,70,70)
+        toast("Đã TIẾP TỤC auto copy", "", 3)
+    else
+        btnToggle.Text = "TIẾP TỤC"
+        btnToggle.BackgroundColor3 = Color3.fromRGB(90,90,90)
+        toast("Đã DỪNG auto copy", "", 3)
+    end
 end)
 
 -- ========= HOOK =========
@@ -199,4 +207,4 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     return oldNamecall(self, ...)
 end))
 
-toast("GUID list bật", 'Thu pet sẽ auto copy + thêm vào danh sách (ấn DỪNG để tạm ngừng)', 4)
+toast("GUID list bật", 'Thu pet sẽ auto copy + thêm vào danh sách (ấn DỪNG/TIẾP TỤC để bật/tắt)', 4)
