@@ -9,7 +9,7 @@ local hrp = char:WaitForChild("HumanoidRootPart")
 print("[auto] init")
 local playerGui = lp:WaitForChild("PlayerGui")
 local autoRunning = true
-local autoRunning = true
+local noclipEnabled = true
 local attHRP, ap, ao
 local function setupFlight()
     attHRP = attHRP or Instance.new("Attachment")
@@ -46,9 +46,9 @@ end)
 UserInputService.JumpRequest:Connect(function()
     if humanoid then humanoid.Jump = false end
 end)
-local followDistance = 4
+local followDistance = 2
 local checkInterval = 1.0
-local nameKeywords = {"slime","blazing slime"}
+local nameKeywords = {"slime"}
 local function norm(s)
     s = tostring(s or "")
     s = s:gsub("<.->","")
@@ -280,7 +280,7 @@ task.spawn(function()
         initialScan()
     end
 end)
-local SURFACE_ALT = 6
+local SURFACE_ALT = 3
 local FLIGHT_SPEED = 16
 local flightTick = 0.05
 local lastSurfaceY = nil
@@ -349,7 +349,20 @@ local function attackLoop(pet)
             if not hrp or not humanoid then break end
             if not autoRunning then break end
             local pos = pet.root.Position
-            flyStepTo(pos)
+            local delta = hrp.Position - pos
+            local dist = delta.Magnitude
+            if dist > followDistance then
+                flyStepTo(pos)
+            else
+                local surfaceY = getSurfaceY(pos)
+                local desiredY = surfaceY + SURFACE_ALT
+                local adjY = hrp.Position.Y + math.clamp(desiredY - hrp.Position.Y, -1, 1)
+                local unit = dist > 0 and delta.Unit or Vector3.new(1,0,0)
+                local holdPos = Vector3.new(pos.X, adjY, pos.Z) + unit * 0.5
+                if ap then ap.Position = holdPos end
+                if ao then ao.CFrame = CFrame.lookAt(hrp.Position, pos) end
+                updateAntiGravity(adjY)
+            end
             task.wait(flightTick)
         end
     end)
