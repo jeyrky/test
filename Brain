@@ -57,6 +57,21 @@ for _,k in ipairs(nameKeywords) do
     local t = norm(k)
     if t ~= "" then table.insert(nNameKeys, t) end
 end
+local function setTargetNames(text)
+    local list = {}
+    for w in string.gmatch(tostring(text or ""), "[^,]+") do
+        local t = norm(w)
+        if t ~= "" then table.insert(list, w) end
+    end
+    if #list > 0 then
+        nameKeywords = list
+        nNameKeys = {}
+        for _,k in ipairs(nameKeywords) do
+            local t = norm(k); if t ~= "" then table.insert(nNameKeys, t) end
+        end
+        initialScan()
+    end
+end
 local function hasHealthHints(model)
     for _,d in ipairs(model:GetDescendants()) do
         if d:IsA("NumberValue") or d:IsA("IntValue") then
@@ -298,7 +313,8 @@ local function moveTo(pos, timeout)
 end
 local function flyStepTo(targetPos)
     local surfaceY = getSurfaceY(targetPos)
-    local targetY = math.max(surfaceY + SURFACE_ALT, hrp.Position.Y)
+    local desiredY = surfaceY + SURFACE_ALT
+    local targetY = hrp.Position.Y + math.clamp(desiredY - hrp.Position.Y, -2, 2)
     local delta = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
     local dist = delta.Magnitude
     if dist <= followDistance then return end
@@ -381,4 +397,16 @@ btn2.Activated:Connect(function()
     noclipEnabled = not noclipEnabled
     btn2.Text = noclipEnabled and "Noclip: ON" or "Noclip: OFF"
     btn2.BackgroundColor3 = noclipEnabled and Color3.fromRGB(0,120,200) or Color3.fromRGB(120,120,120)
+end)
+local input = Instance.new("TextBox")
+input.Name = "TargetInput"
+input.Size = UDim2.new(0, 200, 0, 40)
+input.Position = UDim2.new(0, 270, 1, -50)
+input.Text = table.concat(nameKeywords, ", ")
+input.PlaceholderText = "Tên quái, ví dụ: Slime"
+input.BackgroundColor3 = Color3.fromRGB(40,40,40)
+input.TextColor3 = Color3.fromRGB(255,255,255)
+input.Parent = gui
+input.FocusLost:Connect(function(enter)
+    if enter then setTargetNames(input.Text) end
 end)
