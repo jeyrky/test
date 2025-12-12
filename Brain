@@ -208,9 +208,23 @@ end
 RunService.Stepped:Connect(function()
     if noclipEnabled then enforceNoClip() end
 end)
-local flightAlt = 6
+local SURFACE_ALT = 6
 local FLIGHT_SPEED = 16
 local flightTick = 0.05
+local rcParams = RaycastParams.new()
+rcParams.FilterType = Enum.RaycastFilterType.Exclude
+rcParams.IgnoreWater = true
+rcParams.FilterDescendantsInstances = {char}
+local function getSurfaceY(pos)
+    rcParams.FilterDescendantsInstances = {char}
+    local origin = pos + Vector3.new(0, 200, 0)
+    local dir = Vector3.new(0, -400, 0)
+    local hit = workspace:Raycast(origin, dir, rcParams)
+    if hit and hit.Position then
+        return hit.Position.Y
+    end
+    return pos.Y
+end
 local function moveTo(pos, timeout)
     humanoid:MoveTo(pos)
     local done = false
@@ -223,7 +237,8 @@ local function moveTo(pos, timeout)
     if conn then conn:Disconnect() end
 end
 local function flyStepTo(targetPos)
-    local targetY = math.max(targetPos.Y + flightAlt, hrp.Position.Y)
+    local surfaceY = getSurfaceY(targetPos)
+    local targetY = math.max(surfaceY + SURFACE_ALT, hrp.Position.Y)
     local delta = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
     local dist = delta.Magnitude
     if dist <= followDistance then return end
