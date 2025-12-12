@@ -127,6 +127,9 @@ local function tryAddFromModel(model)
 end
 local function getScanRoots()
     local roots = {}
+    if customRoots and #customRoots > 0 then
+        return customRoots
+    end
     local e = workspace:FindFirstChild("Enemies")
     local m = workspace:FindFirstChild("Mobs")
     local p = workspace:FindFirstChild("Pets")
@@ -135,6 +138,31 @@ local function getScanRoots()
     if p then table.insert(roots, p) end
     if #roots == 0 then table.insert(roots, workspace) end
     return roots
+end
+local function resolvePath(token)
+    token = tostring(token or "")
+    token = token:gsub("%s+", "")
+    if token == "" then return nil end
+    local parts = {}
+    for seg in token:gmatch("[^%./]+") do table.insert(parts, seg) end
+    local node = workspace
+    for _,seg in ipairs(parts) do
+        node = node:FindFirstChild(seg)
+        if not node then return nil end
+    end
+    return node
+end
+customRoots = customRoots or nil
+local function setScanRoots(text)
+    local list = {}
+    for w in tostring(text or ""):gmatch("[^,]+") do
+        local inst = resolvePath(w)
+        if inst then table.insert(list, inst) end
+    end
+    if #list > 0 then
+        customRoots = list
+        initialScan()
+    end
 end
 local function initialScan()
     Candidates = {}
@@ -440,4 +468,16 @@ input.TextColor3 = Color3.fromRGB(255,255,255)
 input.Parent = gui
 input.FocusLost:Connect(function(enter)
     if enter then setTargetNames(input.Text) end
+end)
+local folderInput = Instance.new("TextBox")
+folderInput.Name = "FolderInput"
+folderInput.Size = UDim2.new(0, 220, 0, 40)
+folderInput.Position = UDim2.new(0, 480, 1, -50)
+folderInput.Text = ""
+folderInput.PlaceholderText = "Folder quét (vd: Enemies,Mobs)"
+folderInput.BackgroundColor3 = Color3.fromRGB(40,40,40)
+folderInput.TextColor3 = Color3.fromRGB(255,255,255)
+folderInput.Parent = gui
+folderInput.FocusLost:Connect(function(enter)
+    if enter then setScanRoots(folderInput.Text) end
 end)
