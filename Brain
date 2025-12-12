@@ -1,367 +1,200 @@
--- Clean Path Runner — 25 WP (KHÔNG còn A→B)
--- 1: GIỮ E ngay (giữ/nhả auto start)
--- 2: Chạy 1 chiều tới HOT2_DEST
--- 3: Tuần tự 25 WP (từ "Bắt đầu từ WP") -> chờ 0.5s -> giữ E 2.5s -> VỀ LƯU
-
-local Players            = game:GetService("Players")
-local PathfindingService = game:GetService("PathfindingService")
-local RunService         = game:GetService("RunService")
-local UserInputService   = game:GetService("UserInputService")
-local VirtualInput       = game:GetService("VirtualInputManager")
-
-local lp        = Players.LocalPlayer
-local playerGui = lp:WaitForChild("PlayerGui")
-local char      = lp.Character or lp.CharacterAdded:Wait()
-local hrp       = char:WaitForChild("HumanoidRootPart")
-local humanoid  = char:WaitForChild("Humanoid")
-
--- ===== CONFIG =====
-local AGENT = { AgentRadius = 3, AgentHeight = 5, AgentCanJump = true, WaypointSpacing = 4 }
-local GOAL_REACHED_DIST = 4
-local REPATH_COOLDOWN   = 0.6
-local WP_TIMEOUT_SEC    = 6.0
-local MAX_STEP_Y        = 3.0
-
--- HOT2: đích cố định (đi 1 chiều bằng phím 2)
-local HOT2_DEST = Vector3.new(-303.32, 12.91, 114.46)
-
--- Giữ E
-local HOLD1 = {
-    enabled = true,
-    hold_seconds = 2.5,   -- thời gian giữ E
-    keepalive_dt = 0.10   -- nhịp nhấn lặp
-}
-
--- Trễ trước khi giữ E khi tới đích (phím 3)
-local WAIT_BEFORE_HOLD = 0.5
-
--- Danh sách 25 waypoint (để nil sẽ bỏ qua)
-local WP = {
-    Vector3.new(-330.86, -4.6,  96.30),  -- [1]
-    Vector3.new(-323.54, -4.6,  95.72),  -- [2]
-    Vector3.new(-315.41, -4.6,  96.38),  -- [3]
-    Vector3.new(-309.38, -4.6,  95.49),  -- [4]
-    Vector3.new(-301.25, -4.6,  96.08),  -- [5]
-    Vector3.new(-302.13, -4.6, 131.95),  -- [6]
-    Vector3.new(-309.13, -4.6, 133.29),  -- [7]
-    Vector3.new(-315.31, -4.7, 132.17),  -- [8]
-    Vector3.new(-323.68, -4.6, 131.23),  -- [9]
-    Vector3.new(-332.03, -4.6, 132.01),  -- [10]
-    Vector3.new(-301.80, 13.15,  97.64), -- [11]
-    Vector3.new(-308.33, 13.40,  96.01), -- [12]
-    Vector3.new(-316.74, 13.40,  94.91), -- [13]
-    Vector3.new(-323.54, 13.40,  96.33), -- [14]
-    Vector3.new(-331.14, 13.40,  95.51), -- [15]
-    CFrame.new(-487.31, -4.75, 129.94),  -- [16]
-    CFrame.new(-495.5,  -4.6, 132.82),   -- [17]
-    CFrame.new(-503.6,  -4.7, 130.44),   -- [18]
-    CFrame.new(-510.34, -4.6, 131.82),   -- [19]
-    CFrame.new(-518.31, -4.6, 131.33),   -- [20]
-    CFrame.new(-517.32, -4.65, 96.33),   -- [21]
-    CFrame.new(-509.75, -4.6,  96.12),   -- [22]
-    CFrame.new(-502.89, -4.6,  95.65),   -- [23]
-    CFrame.new(-494.22, -4.6,  95.45),   -- [24]
-    CFrame.new(-487.33, -4.6,  95.67),   -- [25]
-}
-
--- ===== STATE =====
-local savedPos   -- Vector3?
-local originPos  -- Vector3?
-local running    = false
-local starting   = false
-local phase      = "idle"
-local currentPath, evBlocked, lastPathAt = nil, nil, 0
-
--- giữ phím 1 state
-local holding1   = false
-local holdTask   = nil
-
--- trạng thái tuần tự phím 3
-local runningSeq3 = false
-
--- start index state
-local startIndex = 1  -- mặc định
-
--- ===== Helper: nhận Vector3 hoặc CFrame, trả về Vector3 =====
-local function toV3(p)
-    local t = typeof(p)
-    if t == "Vector3" then return p end
-    if t == "CFrame" then return p.Position end
-    return nil
+local Players = game:GetService("Players")
+local VirtualInput = game:GetService("VirtualInputManager")
+local lp = Players.LocalPlayer
+local char = lp.Character or lp.CharacterAdded:Wait()
+local humanoid = char:WaitForChild("Humanoid")
+local hrp = char:WaitForChild("HumanoidRootPart")
+print("[auto] init")
+local followDistance = 4
+local checkInterval = 1.0
+local nameKeywords = {"slime","blazing slime"}
+local function norm(s)
+    s = tostring(s or "")
+    s = s:gsub("<.->","")
+    s = s:gsub("%s+"," "):gsub("^%s+",""):gsub("%s+$","")
+    s = s:lower()
+    return s
 end
-
--- ===== BASICS =====
-local function ensureRunnable()
-    if hrp.Anchored then hrp.Anchored = false end
-    if humanoid.Sit then humanoid.Sit = false end
-    if humanoid.PlatformStand then humanoid.PlatformStand = false end
-    humanoid.AutoRotate = true
-    if humanoid.WalkSpeed < 14 then humanoid.WalkSpeed = 16 end
-    humanoid.UseJumpPower = true
-    if humanoid.JumpPower < 35 then humanoid.JumpPower = 35 end
-    local st = humanoid:GetState()
-    if st ~= Enum.HumanoidStateType.Running and st ~= Enum.HumanoidStateType.RunningNoPhysics then
-        humanoid:ChangeState(Enum.HumanoidStateType.Running)
-    end
+local nNameKeys = {}
+for _,k in ipairs(nameKeywords) do
+    local t = norm(k)
+    if t ~= "" then table.insert(nNameKeys, t) end
 end
-
--- ===== UI =====
-local gui=Instance.new("ScreenGui"); gui.Name="CleanPathRunnerUI"; gui.ResetOnSpawn=false; gui.IgnoreGuiInset=true; gui.Parent=playerGui
-local panel=Instance.new("Frame"); panel.AnchorPoint=Vector2.new(1,0); panel.Position=UDim2.fromScale(1,0.15); panel.Size=UDim2.new(0,260,0,240); panel.BackgroundTransparency=1; panel.Parent=gui
-local function mkBtn(text,y)
-    local b=Instance.new("TextButton")
-    b.Size=UDim2.new(1,-20,0,44); b.Position=UDim2.new(0,10,0,y)
-    b.BackgroundColor3=Color3.fromRGB(20,24,40); b.TextColor3=Color3.fromRGB(230,236,255)
-    b.TextScaled=true; b.Font=Enum.Font.GothamSemibold; b.Text=text
-    Instance.new("UICorner",b).CornerRadius=UDim.new(0,10)
-    local s=Instance.new("UIStroke",b); s.Thickness=1; s.Color=Color3.fromRGB(90,120,255)
-    b.Parent=panel
-    return b
-end
-local btnSave  = mkBtn("💾 Lưu toạ độ", 0)
-local btnStart = mkBtn("▶ Bắt đầu",   56)
-local statusLbl=Instance.new("TextLabel"); statusLbl.Size=UDim2.new(1,-20,0,20); statusLbl.Position=UDim2.new(0,10,0,104)
-statusLbl.BackgroundTransparency=1; statusLbl.TextColor3=Color3.fromRGB(180,210,255); statusLbl.TextXAlignment=Enum.TextXAlignment.Right
-statusLbl.Font=Enum.Font.Gotham; statusLbl.TextScaled=true; statusLbl.Text="IDLE"; statusLbl.Parent=panel
-local function setStatus(s) statusLbl.Text=s end
-local savedLbl=Instance.new("TextLabel"); savedLbl.Size=UDim2.new(1,-20,0,20); savedLbl.Position=UDim2.new(0,10,0,126)
-savedLbl.BackgroundTransparency=1; savedLbl.TextColor3=Color3.fromRGB(140,220,160); savedLbl.TextXAlignment=Enum.TextXAlignment.Right
-savedLbl.Font=Enum.Font.Gotham; savedLbl.TextScaled=true; savedLbl.Text="CHƯA LƯU"; savedLbl.Parent=panel
-local function flashSaved(btn) local t=btn.Text; local c=btn.BackgroundColor3; btn.Text="✅ Đã lưu!"; btn.BackgroundColor3=Color3.fromRGB(34,139,76); task.delay(1.2,function() btn.Text=t; btn.BackgroundColor3=c end) end
-
--- Hàng nhập "Bắt đầu từ WP"
-local row = Instance.new("Frame"); row.Size=UDim2.new(1,-20,0,32); row.Position=UDim2.new(0,10,0,148); row.BackgroundTransparency=1; row.Parent=panel
-local lbl = Instance.new("TextLabel"); lbl.Size=UDim2.new(0.6,0,1,0); lbl.Position=UDim2.new(0,0,0,0); lbl.BackgroundTransparency=1
-lbl.Font=Enum.Font.GothamSemibold; lbl.TextScaled=true; lbl.TextColor3=Color3.fromRGB(200,220,255); lbl.Text="Bắt đầu từ WP:"; lbl.Parent=row
-local tb  = Instance.new("TextBox"); tb.Size=UDim2.new(0.4,-6,1,0); tb.Position=UDim2.new(0.6,6,0,0)
-tb.TextScaled=true; tb.ClearTextOnFocus=false; tb.PlaceholderText="1"; tb.Text=tostring(startIndex)
-tb.BackgroundColor3=Color3.fromRGB(26,30,48); tb.TextColor3=Color3.fromRGB(240,248,255); tb.Font=Enum.Font.GothamSemibold
-Instance.new("UICorner",tb).CornerRadius=UDim.new(0,8)
-local s2=Instance.new("UIStroke",tb); s2.Thickness=1; s2.Color=Color3.fromRGB(90,120,255)
-tb.Parent=row
-
--- chỉ cho số
-tb:GetPropertyChangedSignal("Text"):Connect(function()
-    tb.Text = tb.Text:gsub("%D","") -- lọc non-digit
-    if tb.Text == "" then return end
-    local n = tonumber(tb.Text)
-    local maxN = #WP
-    if n then
-        if n < 1 then n = 1 end
-        if n > maxN then n = maxN end
-        startIndex = n
-    end
-end)
-
--- gán lại khi mất focus (nếu rỗng)
-tb.FocusLost:Connect(function()
-    if tb.Text == "" then tb.Text = tostring(startIndex) end
-end)
-
-local hintLbl=Instance.new("TextLabel"); hintLbl.Size=UDim2.new(1,-20,0,40); hintLbl.Position=UDim2.new(0,10,0,196)
-hintLbl.BackgroundTransparency=1; hintLbl.TextColor3=Color3.fromRGB(200,200,200); hintLbl.TextXAlignment=Enum.TextXAlignment.Left
-hintLbl.Font=Enum.Font.Gotham; hintLbl.TextScaled=true; hintLbl.TextWrapped=true
-hintLbl.Text="Nhập WP bắt đầu (vd 10) rồi ấn 3. 1: Giữ E → tự Start | 2: Tới HOT"; hintLbl.Parent=panel
-
--- ===== PATHFIND CORE =====
-local function computePath(dest)
-    dest = toV3(dest); if not dest then return nil end
-    if time() - (lastPathAt or 0) < REPATH_COOLDOWN then return currentPath end
-    lastPathAt = time()
-    local p = PathfindingService:CreatePath(AGENT)
-    p:ComputeAsync(hrp.Position, dest)
-    if p.Status == Enum.PathStatus.Success then
-        currentPath = p
-        if evBlocked then evBlocked:Disconnect() end
-        evBlocked = p.Blocked:Connect(function() setStatus("Repath (blocked)"); currentPath=nil; lastPathAt=0 end)
-        return p
-    else
-        currentPath = nil
-        return nil
-    end
-end
-
-local function followPathStrict(path, dest)
-    dest = toV3(dest); if not dest then return false end
-    if not path or path.Status ~= Enum.PathStatus.Success then return false end
-    local wps = path:GetWaypoints(); if #wps == 0 then return false end
-    for i,wp in ipairs(wps) do
-        if not running then return false end
-        ensureRunnable()
-        if wp.Action == Enum.PathWaypointAction.Jump or math.abs(wp.Position.Y - hrp.Position.Y) > MAX_STEP_Y then
-            humanoid.Jump = true
-        end
-        setStatus(("%s WP %d/%d"):format(phase == "returning" and "Về" or "Tới", i, #wps))
-        humanoid:MoveTo(wp.Position)
-        local reached=false; local conn; conn = humanoid.MoveToFinished:Connect(function() reached=true; if conn then conn:Disconnect() end end)
-        local startT=time()
-        while running and not reached do
-            RunService.Heartbeat:Wait()
-            if time() - startT > WP_TIMEOUT_SEC then if conn then conn:Disconnect() end; return false end
-        end
-    end
-    return (hrp.Position - dest).Magnitude <= (GOAL_REACHED_DIST + 2)
-end
-
-local function runTo(dest)
-    dest = toV3(dest); if not dest then return false end
-    while running do
-        if (hrp.Position - dest).Magnitude <= GOAL_REACHED_DIST then
-            setStatus(phase == "returning" and "ĐÃ VỀ ĐIỂM" or "ĐÃ TỚI ĐIỂM")
-            return true
-        end
-        ensureRunnable()
-        local p = computePath(dest)
-        if p then
-            local ok = followPathStrict(p, dest)
-            if not running then return false end
-            if not ok then setStatus("Repath (timeout)"); currentPath=nil; lastPathAt=0 end
-        else
-            setStatus("Không có tuyến — đợi…"); task.wait(0.4)
-        end
-        RunService.Heartbeat:Wait()
+local function matchAny(raw, keys)
+    if not raw or #keys == 0 then return false end
+    local s = norm(raw)
+    for _,k in ipairs(keys) do
+        if s:find(k, 1, true) then return true end
     end
     return false
 end
-
-local function runSequence(dest1, dest2)
-    dest1 = toV3(dest1); dest2 = toV3(dest2); if not dest1 or not dest2 then return end
-    phase="going"; setStatus("ĐANG ĐI TỚI ĐIỂM ĐÃ LƯU…"); local ok1 = runTo(dest1)
-    if running and ok1 then phase="returning"; setStatus("QUAY VỀ ĐIỂM BẮT ĐẦU…"); runTo(dest2) end
-    phase="idle"
+local Candidates = {}
+local function attachCandidate(model, root, label)
+    if not model or not root then return end
+    Candidates[model] = {model=model, root=root, label=label}
 end
-
--- ===== Virtual key helpers =====
-local function vKeyDown(code)  VirtualInput:SendKeyEvent(true,  code, false, game) end
-local function vKeyUp(code)    VirtualInput:SendKeyEvent(false, code, false, game) end
-
-local function holdEFor(seconds)
-    pcall(vKeyDown, Enum.KeyCode.E)
-    local t0=time()
-    while time() - t0 < seconds and holding1 do pcall(vKeyDown, Enum.KeyCode.E); task.wait(HOLD1.keepalive_dt) end
-    pcall(vKeyUp, Enum.KeyCode.E)
+local function tryAddFromLabel(label)
+    local raw = (label.ContentText ~= nil) and label.ContentText or label.Text
+    if not matchAny(raw, nNameKeys) then return end
+    local model = label:FindFirstAncestorOfClass("Model"); if not model then return end
+    local root  = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+    if not root then return end
+    attachCandidate(model, root, label)
 end
-
-local function holdEOnce(seconds)
-    pcall(vKeyDown, Enum.KeyCode.E)
-    local t0=time()
-    while time() - t0 < seconds do pcall(vKeyDown, Enum.KeyCode.E); task.wait(HOLD1.keepalive_dt) end
-    pcall(vKeyUp, Enum.KeyCode.E)
+local function tryAddFromModel(model)
+    local root = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+    if not root then return end
+    local ok = matchAny(model.Name, nNameKeys)
+    if not ok then
+        for _,gui in ipairs(model:GetDescendants()) do
+            if gui:IsA("TextLabel") then
+                local t = (gui.ContentText ~= nil) and gui.ContentText or gui.Text
+                if matchAny(t, nNameKeys) then ok = true; break end
+            end
+        end
+    end
+    if ok then attachCandidate(model, root, nil) end
 end
-
-local function cancelHold1()
-    if holding1 then holding1=false; pcall(vKeyUp, Enum.KeyCode.E) end
+local function initialScan()
+    Candidates = {}
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("TextLabel") then
+            tryAddFromLabel(d)
+        elseif d:IsA("Model") then
+            tryAddFromModel(d)
+        end
+    end
 end
-
--- ===== START / STOP =====
-local function startRun()
-    if starting or running then return end
-    if not savedPos then setStatus("Chưa lưu toạ độ"); return end
-    starting=true; originPos=hrp.Position; running=true; runningSeq3=false
-    btnStart.Text="⏸ Dừng"; setStatus("BẮT ĐẦU…")
-    task.spawn(function()
-        currentPath,lastPathAt=nil,0; ensureRunnable(); runSequence(savedPos, originPos)
-        if running then running=false; btnStart.Text="▶ Bắt đầu"; setStatus("XONG") end
-        starting=false
-    end)
-end
-
-local function startRunToHot()
-    if starting or running then return end
-    starting=true; running=true; runningSeq3=false; phase="going_hot"
-    btnStart.Text="⏸ Dừng"; setStatus(("HOT→ (%.1f, %.1f, %.1f)"):format(HOT2_DEST.X,HOT2_DEST.Y,HOT2_DEST.Z))
-    task.spawn(function()
-        currentPath,lastPathAt=nil,0; ensureRunnable(); runTo(HOT2_DEST)
-        if running then running=false; btnStart.Text="▶ Bắt đầu"; setStatus("HOT: XONG") end
-        phase="idle"; starting=false
-    end)
-end
-
--- ====== PHÍM 3: tuần tự 25 WP (có "Bắt đầu từ WP") ======
-local function startSeq3()
-    if starting or running then return end
-    if not savedPos then setStatus("Chưa lưu toạ độ"); return end
-    -- đọc startIndex từ TextBox (nếu rỗng dùng state hiện tại)
-    local idx = tonumber(tb.Text)
-    if not idx then idx = startIndex end
-    idx = math.clamp(idx, 1, #WP)
-    startIndex = idx
-    tb.Text = tostring(startIndex)
-
-    starting=true; running=true; runningSeq3=true; phase="seq3"
-    btnStart.Text="⏸ Dừng"; setStatus(("SEQ-3: BẮT ĐẦU từ WP[%d]"):format(startIndex))
-    task.spawn(function()
-        currentPath,lastPathAt=nil,0; ensureRunnable()
-        local home = savedPos
-        for i = startIndex, #WP do
-            if not running or not runningSeq3 then break end
-            local dest = toV3(WP[i])
-            if dest then
-                setStatus(("SEQ-3: Tới WP[%d]"):format(i)); phase="going_wp"
-                local ok = runTo(dest); if not running or not runningSeq3 then break end
-                if ok then
-                    setStatus(("SEQ-3: WP[%d] – CHỜ %.1fs rồi GIỮ E (%.1fs)"):format(i, WAIT_BEFORE_HOLD, HOLD1.hold_seconds))
-                    task.wait(WAIT_BEFORE_HOLD)
-                    holdEOnce(HOLD1.hold_seconds)
-                    if not running or not runningSeq3 then break end
-                    setStatus("SEQ-3: QUAY VỀ LƯU"); phase="returning"; runTo(home)
+initialScan()
+local addQueue = {}
+local removingSet = setmetatable({}, {__mode = "k"})
+workspace.DescendantAdded:Connect(function(obj)
+    table.insert(addQueue, obj)
+end)
+workspace.DescendantRemoving:Connect(function(obj)
+    local m = obj:IsA("Model") and obj or obj:FindFirstAncestorOfClass("Model")
+    if m then removingSet[m] = true end
+end)
+local MAX_PER_TICK = 60
+task.spawn(function()
+    while true do
+        for m,_ in pairs(removingSet) do
+            Candidates[m] = nil
+            removingSet[m] = nil
+        end
+        local processed = 0
+        while processed < MAX_PER_TICK and #addQueue > 0 do
+            processed = processed + 1
+            local obj = table.remove(addQueue, 1)
+            if obj and obj.Parent then
+                if obj:IsA("TextLabel") then
+                    pcall(tryAddFromLabel, obj)
+                elseif obj:IsA("Model") then
+                    pcall(tryAddFromModel, obj)
                 end
             end
         end
-        if running then running=false; runningSeq3=false; btnStart.Text="▶ Bắt đầu"; setStatus("SEQ-3: HOÀN TẤT") end
-        phase="idle"; starting=false
+        task.wait(0.02)
+    end
+end)
+local function findClosestPet()
+    local nearest, bestDist = nil, math.huge
+    for _, info in pairs(Candidates) do
+        local model = info.model
+        local root  = info.root
+        if model and root and model:IsDescendantOf(workspace) then
+            local pos = root.Position
+            local dist = (hrp.Position - pos).Magnitude
+            if dist < bestDist then
+                bestDist = dist
+                nearest  = info
+            end
+        end
+    end
+    return nearest
+end
+local function findTool(names)
+    local function f(container)
+        if not container then return nil end
+        for _,v in ipairs(container:GetChildren()) do
+            if v:IsA("Tool") then
+                local n = v.Name:lower()
+                for _,k in ipairs(names) do
+                    if n:find(k) then return v end
+                end
+            end
+        end
+        return nil
+    end
+    return f(lp.Backpack) or f(char) or f(lp:FindFirstChild("StarterGear")) or f(lp:FindFirstChild("Weapon")) or f(lp:FindFirstChild("Tools"))
+end
+local function ensureEquipWeapon()
+    local t = findTool({"weapon","sword","blade","pickaxe"})
+    if t then
+        if t.Parent ~= char then pcall(function() humanoid:EquipTool(t) end) end
+        return t
+    end
+    return nil
+end
+local function parseHP(model)
+    for _,gui in ipairs(model:GetDescendants()) do
+        if gui:IsA("TextLabel") then
+            local txt = (gui.ContentText ~= nil) and gui.ContentText or gui.Text
+            if txt and txt:lower():find("hp") then
+                local n = tonumber((txt:lower():match("([%d%.]+)%s*hp")))
+                if n then return n end
+            end
+        end
+    end
+    return nil
+end
+local function tapCenter()
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    local v = cam.ViewportSize
+    local x, y = v.X/2, v.Y/2
+    VirtualInput:SendMouseButtonEvent(x, y, 0, true, game, 0)
+    VirtualInput:SendMouseButtonEvent(x, y, 0, false, game, 0)
+end
+local function attackLoop(pet)
+    local alive = true
+    task.spawn(function()
+        while alive and pet.model:IsDescendantOf(workspace) do
+            if not hrp or not humanoid then break end
+            local pos = pet.root.Position
+            local dist = (hrp.Position - pos).Magnitude
+            if dist > 120 then
+                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 6, 0))
+            elseif dist > followDistance then
+                humanoid:MoveTo(Vector3.new(pos.X, hrp.Position.Y, pos.Z))
+            end
+            task.wait(0.1)
+        end
     end)
+    local start = os.clock()
+    print("[auto] engage target")
+    while pet.model:IsDescendantOf(workspace) do
+        if not hrp or not humanoid then break end
+        local t = ensureEquipWeapon()
+        if t then pcall(function() t:Activate() end) end
+        tapCenter()
+        local hp = parseHP(pet.model)
+        if hp and hp <= 0 then break end
+        if os.clock() - start > 30 then break end
+        task.wait(0.12)
+    end
+    alive = false
 end
-
-local function stopRun()
-    cancelHold1()
-    if not running then return end
-    running=false; runningSeq3=false; btnStart.Text="▶ Bắt đầu"
-    humanoid:MoveTo(hrp.Position); currentPath=nil; lastPathAt=0
-    setStatus("DỪNG"); starting=false; phase="idle"
-end
-
-local function toggleRun() if running then stopRun() else startRun() end end
-
--- ===== BUTTONS =====
-btnSave.Activated:Connect(function()
-    savedPos = hrp.Position
-    savedLbl.Text = ("ĐÃ LƯU: (%.1f, %.1f, %.1f)"):format(savedPos.X, savedPos.Y, savedPos.Z)
-    flashSaved(btnSave)
-end)
-btnStart.Activated:Connect(function() toggleRun() end)
-
--- ===== HOTKEYS =====
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed or UserInputService:GetFocusedTextBox() then return end
-    if input.KeyCode == Enum.KeyCode.One then
-        if not HOLD1.enabled or running or starting then return end
-        if holding1 then cancelHold1(); setStatus("Hold-1: huỷ"); return end
-        holding1=true; local secs = HOLD1.hold_seconds or 4.0
-        setStatus(("Hold-1: ĐANG GIỮ E ảo (%.1fs)"):format(secs))
-        if holdTask then holdTask=nil end
-        holdTask = task.spawn(function()
-            holdEFor(secs)
-            if holding1 then holding1=false; setStatus("Hold-1: NHẢ E ảo → BẮT ĐẦU"); if not running and not starting then startRun() end end
-        end)
-        return
-    end
-    if input.KeyCode == Enum.KeyCode.Two then
-        if running or starting then stopRun(); setStatus("HOT-2: huỷ/dừng") else startRunToHot() end
-        return
-    end
-    if input.KeyCode == Enum.KeyCode.Three then
-        if running then stopRun(); setStatus("SEQ-3: huỷ/dừng") else startSeq3() end
-        return
+local lastPet
+task.spawn(function()
+    while true do
+        task.wait(checkInterval)
+        local pet = findClosestPet()
+        if pet and (not lastPet or pet.model ~= lastPet.model) then
+            lastPet = pet
+            attackLoop(pet)
+        elseif not pet then
+            lastPet = nil
+        end
     end
 end)
-
--- ===== RESPAWN SAFE =====
-lp.CharacterAdded:Connect(function(c)
-    char=c; hrp=c:WaitForChild("HumanoidRootPart"); humanoid=c:WaitForChild("Humanoid")
-    currentPath,lastPathAt=nil,0; phase="idle"; starting=false; running=false; runningSeq3=false
-    btnStart.Text="▶ Bắt đầu"; ensureRunnable(); cancelHold1(); setStatus("Respawn: sẵn sàng")
-end)
-
--- init
-ensureRunnable()
