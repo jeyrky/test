@@ -57,6 +57,17 @@ for _,k in ipairs(nameKeywords) do
     local t = norm(k)
     if t ~= "" then table.insert(nNameKeys, t) end
 end
+local function hasHealthHints(model)
+    for _,d in ipairs(model:GetDescendants()) do
+        if d:IsA("NumberValue") or d:IsA("IntValue") then
+            local n = d.Name:lower()
+            if n:find("hp") or n:find("health") then return true end
+        elseif d:IsA("Humanoid") then
+            return true
+        end
+    end
+    return false
+end
 local function matchAny(raw, keys)
     if not raw or #keys == 0 then return false end
     local s = norm(raw)
@@ -90,19 +101,36 @@ local function tryAddFromModel(model)
             end
         end
     end
+    if not ok then
+        ok = hasHealthHints(model)
+    end
     if ok then attachCandidate(model, root, nil) end
+end
+local function getScanRoots()
+    local roots = {}
+    local e = workspace:FindFirstChild("Enemies")
+    local m = workspace:FindFirstChild("Mobs")
+    local p = workspace:FindFirstChild("Pets")
+    if e then table.insert(roots, e) end
+    if m then table.insert(roots, m) end
+    if p then table.insert(roots, p) end
+    if #roots == 0 then table.insert(roots, workspace) end
+    return roots
 end
 local function initialScan()
     Candidates = {}
-    for _, d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("TextLabel") then
-            tryAddFromLabel(d)
-        elseif d:IsA("Model") then
-            tryAddFromModel(d)
+    for _,root in ipairs(getScanRoots()) do
+        for _, d in ipairs(root:GetDescendants()) do
+            if d:IsA("TextLabel") then
+                tryAddFromLabel(d)
+            elseif d:IsA("Model") then
+                tryAddFromModel(d)
+            end
         end
     end
 end
 initialScan()
+print("[auto] candidates after init:", (function() local c=0 for _ in pairs(Candidates) do c=c+1 end return c end)())
 local addQueue = {}
 local removingSet = setmetatable({}, {__mode = "k"})
 workspace.DescendantAdded:Connect(function(obj)
@@ -148,6 +176,7 @@ local function findClosestPet()
             end
         end
     end
+    if not nearest then print("[auto] no pet found near") end
     return nearest
 end
 local function findTool(names)
@@ -177,6 +206,11 @@ local function ensureEquipWeapon()
     return currentWeapon
 end
 local function parseHP(model)
+    for _,h in ipairs(model:GetDescendants()) do
+        if h:IsA("Humanoid") then
+            return h.Health
+        end
+    end
     for _,gui in ipairs(model:GetDescendants()) do
         if gui:IsA("TextLabel") then
             local txt = (gui.ContentText ~= nil) and gui.ContentText or gui.Text
@@ -196,6 +230,18 @@ local function tapCenter()
     VirtualInput:SendMouseButtonEvent(x, y, 0, true, game, 0)
     VirtualInput:SendMouseButtonEvent(x, y, 0, false, game, 0)
 end
+local function tapAtWorld(pos)
+    local cam = workspace.CurrentCamera
+    if not cam then return tapCenter() end
+    local vp, on = cam:WorldToViewportPoint(pos)
+    if on then
+        local x, y = vp.X, vp.Y
+        VirtualInput:SendMouseButtonEvent(x, y, 0, true, game, 0)
+        VirtualInput:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    else
+        tapCenter()
+    end
+end
 local function enforceNoClip()
     if not noclipEnabled then return end
     for _,p in ipairs(char:GetDescendants()) do
@@ -208,9 +254,17 @@ end
 RunService.Stepped:Connect(function()
     if noclipEnabled then enforceNoClip() end
 end)
+local HEAVY_SCAN_EVERY = 6
+task.spawn(function()
+    while true do
+        task.wait(HEAVY_SCAN_EVERY)
+        initialScan()
+    end
+end)
 local SURFACE_ALT = 6
 local FLIGHT_SPEED = 16
 local flightTick = 0.05
+local lastSurfaceY = nil
 local rcParams = RaycastParams.new()
 rcParams.FilterType = Enum.RaycastFilterType.Exclude
 rcParams.IgnoreWater = true
@@ -221,7 +275,13 @@ local function getSurfaceY(pos)
     local dir = Vector3.new(0, -400, 0)
     local hit = workspace:Raycast(origin, dir, rcParams)
     if hit and hit.Position then
-        return hit.Position.Y
+        local y = hit.Position.Y
+        if lastSurfaceY == nil then
+            lastSurfaceY = y
+        else
+            lastSurfaceY = lastSurfaceY + (y - lastSurfaceY) * 0.5
+        end
+        return lastSurfaceY
     end
     return pos.Y
 end
@@ -269,7 +329,7 @@ local function attackLoop(pet)
         if distNow <= followDistance + 0.5 then
             local t = ensureEquipWeapon()
             if t then pcall(function() t:Activate() end) end
-            tapCenter()
+            tapAtWorld(pos)
         end
         local hp = parseHP(pet.model)
         if hp and hp <= 0 then break end
