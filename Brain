@@ -8,7 +8,7 @@ local hrp = char:WaitForChild("HumanoidRootPart")
 print("[auto] init")
 local playerGui = lp:WaitForChild("PlayerGui")
 local autoRunning = true
-local noclipEnabled = true
+local autoRunning = true
 local attHRP, ap, ao
 local function setupFlight()
     attHRP = attHRP or Instance.new("Attachment")
@@ -16,14 +16,24 @@ local function setupFlight()
     ap = ap or Instance.new("AlignPosition")
     ap.Attachment0 = attHRP
     ap.ApplyAtCenterOfMass = true
-    ap.MaxForce = 1e6
-    ap.Responsiveness = 50
+    ap.MaxForce = 5e7
+    ap.Responsiveness = 25
     ap.Parent = hrp
     ao = ao or Instance.new("AlignOrientation")
     ao.Attachment0 = attHRP
-    ao.MaxTorque = 1e6
-    ao.Responsiveness = 50
+    ao.MaxTorque = 5e7
+    ao.Responsiveness = 25
     ao.Parent = hrp
+    if not hrp:FindFirstChild("AntiGravity") then
+        local vg = Instance.new("VectorForce")
+        vg.Name = "AntiGravity"
+        vg.Attachment0 = attHRP
+        vg.Force = Vector3.new(0, workspace.Gravity * hrp.AssemblyMass, 0)
+        vg.RelativeTo = Enum.ActuatorRelativeTo.World
+        vg.Parent = hrp
+    else
+        hrp.AntiGravity.Force = Vector3.new(0, workspace.Gravity * hrp.AssemblyMass, 0)
+    end
 end
 setupFlight()
 lp.CharacterAdded:Connect(function(c)
@@ -200,7 +210,7 @@ RunService.Stepped:Connect(function()
 end)
 local flightAlt = 6
 local FLIGHT_SPEED = 16
-local flightTick = 0.1
+local flightTick = 0.05
 local function moveTo(pos, timeout)
     humanoid:MoveTo(pos)
     local done = false
