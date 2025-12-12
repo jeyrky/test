@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local VirtualInput = game:GetService("VirtualInputManager")
 local lp = Players.LocalPlayer
 local char = lp.Character or lp.CharacterAdded:Wait()
@@ -7,6 +8,30 @@ local hrp = char:WaitForChild("HumanoidRootPart")
 print("[auto] init")
 local playerGui = lp:WaitForChild("PlayerGui")
 local autoRunning = true
+local noclipEnabled = true
+local attHRP, ap, ao
+local function setupFlight()
+    attHRP = attHRP or Instance.new("Attachment")
+    attHRP.Parent = hrp
+    ap = ap or Instance.new("AlignPosition")
+    ap.Attachment0 = attHRP
+    ap.ApplyAtCenterOfMass = true
+    ap.MaxForce = 1e6
+    ap.Responsiveness = 50
+    ap.Parent = hrp
+    ao = ao or Instance.new("AlignOrientation")
+    ao.Attachment0 = attHRP
+    ao.MaxTorque = 1e6
+    ao.Responsiveness = 50
+    ao.Parent = hrp
+end
+setupFlight()
+lp.CharacterAdded:Connect(function(c)
+    char = c
+    humanoid = c:WaitForChild("Humanoid")
+    hrp = c:WaitForChild("HumanoidRootPart")
+    setupFlight()
+end)
 local followDistance = 4
 local checkInterval = 1.0
 local nameKeywords = {"slime","blazing slime"}
@@ -161,6 +186,18 @@ local function tapCenter()
     VirtualInput:SendMouseButtonEvent(x, y, 0, true, game, 0)
     VirtualInput:SendMouseButtonEvent(x, y, 0, false, game, 0)
 end
+local function enforceNoClip()
+    if not noclipEnabled then return end
+    for _,p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.CanCollide = false
+        end
+    end
+    humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+end
+RunService.Stepped:Connect(function()
+    if noclipEnabled then enforceNoClip() end
+end)
 local flightAlt = 6
 local FLIGHT_SPEED = 16
 local flightTick = 0.1
@@ -183,7 +220,8 @@ local function flyStepTo(targetPos)
     local dir = dist > 0 and delta.Unit or Vector3.new()
     local step = math.min(FLIGHT_SPEED * flightTick, dist)
     local nextPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z) + dir * step
-    moveTo(nextPos, 1.2)
+    if ap then ap.Position = nextPos end
+    if ao then ao.CFrame = CFrame.lookAt(hrp.Position, nextPos) end
 end
 local function attackLoop(pet)
     local alive = true
@@ -201,9 +239,13 @@ local function attackLoop(pet)
     while pet.model:IsDescendantOf(workspace) do
         if not hrp or not humanoid then break end
         if not autoRunning then task.wait(0.2) continue end
-        local t = ensureEquipWeapon()
-        if t then pcall(function() t:Activate() end) end
-        tapCenter()
+        local pos = pet.root.Position
+        local distNow = (hrp.Position - pos).Magnitude
+        if distNow <= followDistance + 0.5 then
+            local t = ensureEquipWeapon()
+            if t then pcall(function() t:Activate() end) end
+            tapCenter()
+        end
         local hp = parseHP(pet.model)
         if hp and hp <= 0 then break end
         if os.clock() - start > 30 then break end
@@ -239,6 +281,19 @@ btn.TextColor3 = Color3.fromRGB(255,255,255)
 btn.Parent = gui
 btn.Activated:Connect(function()
     autoRunning = not autoRunning
-    btn.Text = autoRunning and "Auto: ON" or "Auto: OFF"
+    btn.Text = autoRunning and "Bắt đầu: ON" or "Bắt đầu: OFF"
     btn.BackgroundColor3 = autoRunning and Color3.fromRGB(0,170,85) or Color3.fromRGB(170,0,0)
+end)
+local btn2 = Instance.new("TextButton")
+btn2.Name = "NoclipButton"
+btn2.Size = UDim2.new(0, 120, 0, 40)
+btn2.Position = UDim2.new(0, 140, 1, -50)
+btn2.Text = "Noclip: ON"
+btn2.BackgroundColor3 = Color3.fromRGB(0,120,200)
+btn2.TextColor3 = Color3.fromRGB(255,255,255)
+btn2.Parent = gui
+btn2.Activated:Connect(function()
+    noclipEnabled = not noclipEnabled
+    btn2.Text = noclipEnabled and "Noclip: ON" or "Noclip: OFF"
+    btn2.BackgroundColor3 = noclipEnabled and Color3.fromRGB(0,120,200) or Color3.fromRGB(120,120,120)
 end)
