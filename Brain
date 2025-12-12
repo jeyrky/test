@@ -5,6 +5,8 @@ local char = lp.Character or lp.CharacterAdded:Wait()
 local humanoid = char:WaitForChild("Humanoid")
 local hrp = char:WaitForChild("HumanoidRootPart")
 print("[auto] init")
+local playerGui = lp:WaitForChild("PlayerGui")
+local autoRunning = true
 local followDistance = 4
 local checkInterval = 1.0
 local nameKeywords = {"slime","blazing slime"}
@@ -128,13 +130,16 @@ local function findTool(names)
     end
     return f(lp.Backpack) or f(char) or f(lp:FindFirstChild("StarterGear")) or f(lp:FindFirstChild("Weapon")) or f(lp:FindFirstChild("Tools"))
 end
+local currentWeapon = nil
 local function ensureEquipWeapon()
-    local t = findTool({"weapon","sword","blade","pickaxe"})
-    if t then
-        if t.Parent ~= char then pcall(function() humanoid:EquipTool(t) end) end
-        return t
+    if currentWeapon and currentWeapon.Parent == char then return currentWeapon end
+    local t = currentWeapon
+    if not t or t.Parent ~= char then
+        t = findTool({"weapon","sword","blade"})
+        if t and t.Parent ~= char then pcall(function() humanoid:EquipTool(t) end) end
+        currentWeapon = t
     end
-    return nil
+    return currentWeapon
 end
 local function parseHP(model)
     for _,gui in ipairs(model:GetDescendants()) do
@@ -157,7 +162,7 @@ local function tapCenter()
     VirtualInput:SendMouseButtonEvent(x, y, 0, false, game, 0)
 end
 local flightAlt = 6
-local stepDist = 8
+local FLIGHT_SPEED = 16
 local flightTick = 0.1
 local function moveTo(pos, timeout)
     humanoid:MoveTo(pos)
@@ -176,7 +181,8 @@ local function flyStepTo(targetPos)
     local dist = delta.Magnitude
     if dist <= followDistance then return end
     local dir = dist > 0 and delta.Unit or Vector3.new()
-    local nextPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z) + dir * math.min(stepDist, dist)
+    local step = math.min(FLIGHT_SPEED * flightTick, dist)
+    local nextPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z) + dir * step
     moveTo(nextPos, 1.2)
 end
 local function attackLoop(pet)
@@ -184,6 +190,7 @@ local function attackLoop(pet)
     task.spawn(function()
         while alive and pet.model:IsDescendantOf(workspace) do
             if not hrp or not humanoid then break end
+            if not autoRunning then break end
             local pos = pet.root.Position
             flyStepTo(pos)
             task.wait(flightTick)
@@ -193,6 +200,7 @@ local function attackLoop(pet)
     print("[auto] engage target")
     while pet.model:IsDescendantOf(workspace) do
         if not hrp or not humanoid then break end
+        if not autoRunning then task.wait(0.2) continue end
         local t = ensureEquipWeapon()
         if t then pcall(function() t:Activate() end) end
         tapCenter()
@@ -207,6 +215,7 @@ local lastPet
 task.spawn(function()
     while true do
         task.wait(checkInterval)
+        if not autoRunning then continue end
         local pet = findClosestPet()
         if pet and (not lastPet or pet.model ~= lastPet.model) then
             lastPet = pet
@@ -215,4 +224,21 @@ task.spawn(function()
             lastPet = nil
         end
     end
+end)
+local gui = Instance.new("ScreenGui")
+gui.Name = "AutoToggle"
+gui.ResetOnSpawn = false
+gui.Parent = playerGui
+local btn = Instance.new("TextButton")
+btn.Name = "AutoButton"
+btn.Size = UDim2.new(0, 120, 0, 40)
+btn.Position = UDim2.new(0, 10, 1, -50)
+btn.Text = "Auto: ON"
+btn.BackgroundColor3 = Color3.fromRGB(0,170,85)
+btn.TextColor3 = Color3.fromRGB(255,255,255)
+btn.Parent = gui
+btn.Activated:Connect(function()
+    autoRunning = not autoRunning
+    btn.Text = autoRunning and "Auto: ON" or "Auto: OFF"
+    btn.BackgroundColor3 = autoRunning and Color3.fromRGB(0,170,85) or Color3.fromRGB(170,0,0)
 end)
