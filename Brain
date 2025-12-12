@@ -246,7 +246,7 @@ local function ensureEquipWeapon()
     if currentWeapon and currentWeapon.Parent == char then return currentWeapon end
     local t = currentWeapon
     if not t or t.Parent ~= char then
-        t = findTool({"weapon","sword","blade"})
+        t = findTool({"weapon","sword","blade","pickaxe","axe","pick"})
         if t and t.Parent ~= char then pcall(function() humanoid:EquipTool(t) end) end
         currentWeapon = t
     end
@@ -313,6 +313,36 @@ local FLIGHT_SPEED = 16
 local flightTick = 0.05
 local MIN_SPEED = 8
 local lastSurfaceY = nil
+local boundsCF, boundsSize = workspace:GetBoundingBox()
+local function refreshBounds()
+    boundsCF, boundsSize = workspace:GetBoundingBox()
+end
+task.spawn(function()
+    while true do
+        task.wait(5)
+        refreshBounds()
+    end
+end)
+local function isWithinMapBounds(p)
+    if not boundsCF or not boundsSize then return true end
+    local half = boundsSize/2
+    local minX = boundsCF.Position.X - half.X
+    local maxX = boundsCF.Position.X + half.X
+    local minZ = boundsCF.Position.Z - half.Z
+    local maxZ = boundsCF.Position.Z + half.Z
+    return p.X >= minX and p.X <= maxX and p.Z >= minZ and p.Z <= maxZ
+end
+local function clampToBounds(p)
+    if not boundsCF or not boundsSize then return p end
+    local half = boundsSize/2
+    local minX = boundsCF.Position.X - half.X
+    local maxX = boundsCF.Position.X + half.X
+    local minZ = boundsCF.Position.Z - half.Z
+    local maxZ = boundsCF.Position.Z + half.Z
+    local x = math.clamp(p.X, minX, maxX)
+    local z = math.clamp(p.Z, minZ, maxZ)
+    return Vector3.new(x, p.Y, z)
+end
 local function updateAntiGravity(targetY)
     local vg = hrp and hrp:FindFirstChild("AntiGravity")
     if not vg then return end
@@ -344,7 +374,7 @@ local function getSurfaceY(pos)
         end
         return lastSurfaceY
     end
-    return pos.Y
+    return nil
 end
 local function moveTo(pos, timeout)
     humanoid:MoveTo(pos)
@@ -358,7 +388,7 @@ local function moveTo(pos, timeout)
     if conn then conn:Disconnect() end
 end
 local function flyStepTo(targetPos)
-    local surfaceY = getSurfaceY(targetPos)
+    local surfaceY = getSurfaceY(targetPos) or lastSurfaceY or hrp.Position.Y
     local desiredY = surfaceY + SURFACE_ALT
     local targetY = hrp.Position.Y + math.clamp(desiredY - hrp.Position.Y, -2, 2)
     local delta = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
@@ -368,6 +398,7 @@ local function flyStepTo(targetPos)
     local speed = math.max(MIN_SPEED, math.min(FLIGHT_SPEED, dist * 0.7))
     local step = math.min(speed * flightTick, dist)
     local nextPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z) + dir * step
+    nextPos = clampToBounds(nextPos)
     if ap then ap.Position = nextPos end
     if ao then ao.CFrame = CFrame.lookAt(hrp.Position, nextPos) end
     updateAntiGravity(targetY)
@@ -385,8 +416,13 @@ local function buildSearch(center)
             local th = (i / SEARCH_POINTS_PER_RING) * 2 * math.pi
             local x = center.X + rad * math.cos(th)
             local z = center.Z + rad * math.sin(th)
-            local y = getSurfaceY(Vector3.new(x, center.Y, z))
-            table.insert(searchQueue, Vector3.new(x, y + SURFACE_ALT, z))
+            local base = Vector3.new(x, center.Y, z)
+            if isWithinMapBounds(base) then
+                local y = getSurfaceY(base)
+                if y then
+                    table.insert(searchQueue, Vector3.new(x, y + SURFACE_ALT, z))
+                end
+            end
         end
     end
     searchIndex = 1
@@ -397,6 +433,19 @@ local function advanceSearch()
     searchIndex = (searchIndex % #searchQueue) + 1
     flyStepTo(p)
 end
+local function recoverIfNoGround()
+    local y = getSurfaceY(hrp.Position)
+    if not y then
+        local safeY = (lastSurfaceY or hrp.Position.Y)
+        local safePos = Vector3.new(hrp.Position.X, safeY + SURFACE_ALT, hrp.Position.Z)
+        safePos = clampToBounds(safePos)
+        if ap then ap.Position = safePos end
+        updateAntiGravity(safeY + SURFACE_ALT)
+    end
+end
+RunService.Heartbeat:Connect(function()
+    recoverIfNoGround()
+end)
 local function attackLoop(pet)
     local alive = true
     task.spawn(function()
@@ -427,6 +476,7 @@ local function attackLoop(pet)
         if not hrp or not humanoid then break end
         if not autoRunning then task.wait(0.2) continue end
         local pos = pet.root.Position
+        if not isWithinMapBounds(pos) then break end
         local distNow = (hrp.Position - pos).Magnitude
         if distNow <= followDistance + 0.5 then
             local t = ensureEquipWeapon()
