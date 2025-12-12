@@ -311,6 +311,7 @@ end)
 local SURFACE_ALT = 3
 local FLIGHT_SPEED = 16
 local flightTick = 0.05
+local MIN_SPEED = 8
 local lastSurfaceY = nil
 local function updateAntiGravity(targetY)
     local vg = hrp and hrp:FindFirstChild("AntiGravity")
@@ -364,7 +365,8 @@ local function flyStepTo(targetPos)
     local dist = delta.Magnitude
     if dist <= followDistance then return end
     local dir = dist > 0 and delta.Unit or Vector3.new()
-    local step = math.min(FLIGHT_SPEED * flightTick, dist)
+    local speed = math.max(MIN_SPEED, math.min(FLIGHT_SPEED, dist * 0.7))
+    local step = math.min(speed * flightTick, dist)
     local nextPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z) + dir * step
     if ap then ap.Position = nextPos end
     if ao then ao.CFrame = CFrame.lookAt(hrp.Position, nextPos) end
