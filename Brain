@@ -156,19 +156,37 @@ local function tapCenter()
     VirtualInput:SendMouseButtonEvent(x, y, 0, true, game, 0)
     VirtualInput:SendMouseButtonEvent(x, y, 0, false, game, 0)
 end
+local flightAlt = 6
+local stepDist = 8
+local flightTick = 0.1
+local function moveTo(pos, timeout)
+    humanoid:MoveTo(pos)
+    local done = false
+    local conn
+    conn = humanoid.MoveToFinished:Connect(function() done = true end)
+    local startT = os.clock()
+    while not done and os.clock() - startT < (timeout or 1.5) do
+        task.wait(0.05)
+    end
+    if conn then conn:Disconnect() end
+end
+local function flyStepTo(targetPos)
+    local targetY = math.max(targetPos.Y + flightAlt, hrp.Position.Y)
+    local delta = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
+    local dist = delta.Magnitude
+    if dist <= followDistance then return end
+    local dir = dist > 0 and delta.Unit or Vector3.new()
+    local nextPos = Vector3.new(hrp.Position.X, targetY, hrp.Position.Z) + dir * math.min(stepDist, dist)
+    moveTo(nextPos, 1.2)
+end
 local function attackLoop(pet)
     local alive = true
     task.spawn(function()
         while alive and pet.model:IsDescendantOf(workspace) do
             if not hrp or not humanoid then break end
             local pos = pet.root.Position
-            local dist = (hrp.Position - pos).Magnitude
-            if dist > 120 then
-                hrp.CFrame = CFrame.new(pos + Vector3.new(0, 6, 0))
-            elseif dist > followDistance then
-                humanoid:MoveTo(Vector3.new(pos.X, hrp.Position.Y, pos.Z))
-            end
-            task.wait(0.1)
+            flyStepTo(pos)
+            task.wait(flightTick)
         end
     end)
     local start = os.clock()
