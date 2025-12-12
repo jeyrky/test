@@ -372,6 +372,31 @@ local function flyStepTo(targetPos)
     if ao then ao.CFrame = CFrame.lookAt(hrp.Position, nextPos) end
     updateAntiGravity(targetY)
 end
+local SEARCH_RADIUS_STEP = 120
+local SEARCH_MAX_RINGS = 8
+local SEARCH_POINTS_PER_RING = 16
+local searchQueue = {}
+local searchIndex = 1
+local function buildSearch(center)
+    searchQueue = {}
+    for r = 1, SEARCH_MAX_RINGS do
+        local rad = r * SEARCH_RADIUS_STEP
+        for i = 1, SEARCH_POINTS_PER_RING do
+            local th = (i / SEARCH_POINTS_PER_RING) * 2 * math.pi
+            local x = center.X + rad * math.cos(th)
+            local z = center.Z + rad * math.sin(th)
+            local y = getSurfaceY(Vector3.new(x, center.Y, z))
+            table.insert(searchQueue, Vector3.new(x, y + SURFACE_ALT, z))
+        end
+    end
+    searchIndex = 1
+end
+local function advanceSearch()
+    if #searchQueue == 0 then buildSearch(hrp.Position) end
+    local p = searchQueue[searchIndex]
+    searchIndex = (searchIndex % #searchQueue) + 1
+    flyStepTo(p)
+end
 local function attackLoop(pet)
     local alive = true
     task.spawn(function()
@@ -426,6 +451,7 @@ task.spawn(function()
             attackLoop(pet)
         elseif not pet then
             lastPet = nil
+            advanceSearch()
         end
     end
 end)
