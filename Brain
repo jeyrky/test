@@ -16,42 +16,56 @@ local function next_seq()
     seq = seq + 1
     return seq
 end
-local function post(url, body)
-    local data = HttpService:JSONEncode(body)
+local function raw_request(method, url, body)
     local ok, res = pcall(function()
-        return HttpService:RequestAsync({Url = url, Method = "POST", Headers = headers(), Body = data})
+        return HttpService:RequestAsync({Url = url, Method = method, Headers = headers(), Body = body})
     end)
-    if ok and res and res.Success then
-        local ack_ok, ack = pcall(function() return HttpService:JSONDecode(res.Body or "{}") end)
-        if ack_ok and ack and ack.ok == true then return true, ack end
+    if ok and res then
+        local code = res.StatusCode or 0
+        local b = res.Body or ""
+        return true, code, b, "RequestAsync"
     end
     if syn and syn.request then
-        local r = syn.request({Url = url, Method = "POST", Headers = headers(), Body = data})
-        local bodyStr = r and (r.Body or r.body) or ""
+        local r = syn.request({Url = url, Method = method, Headers = headers(), Body = body})
         local code = r and r.StatusCode or 0
-        if code and code >= 200 and code < 300 then
-            local ack_ok, ack = pcall(function() return HttpService:JSONDecode(bodyStr ~= "" and bodyStr or "{}") end)
-            if ack_ok and ack and ack.ok == true then return true, ack end
-        end
+        local b = r and (r.Body or r.body) or ""
+        if code >= 200 and code < 600 then return true, code, b, "syn.request" end
     end
     if http_request then
-        local r = http_request({Url = url, Method = "POST", Headers = headers(), Body = data})
-        local bodyStr = r and (r.Body or r.body) or ""
+        local r = http_request({Url = url, Method = method, Headers = headers(), Body = body})
         local code = r and r.StatusCode or 0
-        if code and code >= 200 and code < 300 then
-            local ack_ok, ack = pcall(function() return HttpService:JSONDecode(bodyStr ~= "" and bodyStr or "{}") end)
-            if ack_ok and ack and ack.ok == true then return true, ack end
-        end
+        local b = r and (r.Body or r.body) or ""
+        if code >= 200 and code < 600 then return true, code, b, "http_request" end
     end
     if request then
-        local r = request({Url = url, Method = "POST", Headers = headers(), Body = data})
-        local bodyStr = r and (r.Body or r.body) or ""
+        local r = request({Url = url, Method = method, Headers = headers(), Body = body})
         local code = (r and (r.StatusCode or r.status_code)) or 0
-        if code >= 200 and code < 300 then
-            local ack_ok, ack = pcall(function() return HttpService:JSONDecode(bodyStr ~= "" and bodyStr or "{}") end)
-            if ack_ok and ack and ack.ok == true then return true, ack end
+        local b = r and (r.Body or r.body) or ""
+        if code >= 200 and code < 600 then return true, code, b, "request" end
+    end
+    return false, 0, "", "none"
+end
+local function check_status()
+    local ok, code, b, m = raw_request("GET", SERVER .. "/status", "")
+    if ok and code >= 200 and code < 300 then
+        print("STATUS_OK", m, code)
+        return true
+    else
+        print("STATUS_FAIL", m, code)
+        return false
+    end
+end
+local function post(url, body)
+    local data = HttpService:JSONEncode(body)
+    local ok, code, bodyStr, method = raw_request("POST", url, data)
+    if ok and code >= 200 and code < 300 then
+        local ack_ok, ack = pcall(function() return HttpService:JSONDecode(bodyStr ~= "" and bodyStr or "{}") end)
+        if ack_ok and ack and ack.ok == true then
+            print("POST_OK", method, code)
+            return true, ack
         end
     end
+    print("POST_FAIL", method, code)
     return false, nil
 end
 local session_id = tostring(math.random(1000000000)) .. "-" .. tostring(os.time())
@@ -82,6 +96,7 @@ local function handshake()
     end
     return false
 end
+check_status()
 handshake()
 task.spawn(function()
     while true do
