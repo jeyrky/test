@@ -1,106 +1,94 @@
+local AppStorageService = game:GetService("AppStorageService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
-local SERVER = "http://192.168.1.103:8003"
-local function headers()
-    return {["Content-Type"] = "application/json"}
+local RunService = game:GetService("RunService")
+
+-- CONFIG
+local SERVER_URL = "http://192.168.1.230:8000"
+local HEARTBEAT_INTERVAL = 15 -- Giây
+
+-- State
+local PkgName = ""
+
+local function log(msg)
+    print("[AUTO] " .. tostring(msg))
 end
-local function backoff(n)
-    local base = 0.25
-    local max = 2
-    local v = math.min(max, base * (2 ^ (n - 1)))
-    local j = math.random() * 0.2
-    return v + j
-end
-local seq = 0
-local function next_seq()
-    seq = seq + 1
-    return seq
-end
-local function raw_request(method, url, body)
+
+-- Hàm gửi request an toàn
+local function sendRequest(endpoint, data)
+    if PkgName == "" then return end
+    local body = HttpService:JSONEncode(data)
     local ok, res = pcall(function()
-        return HttpService:RequestAsync({Url = url, Method = method, Headers = headers(), Body = body})
+        return HttpService:RequestAsync({
+            Url = SERVER_URL .. endpoint,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = body
+        })
     end)
-    if ok and res then
-        local code = res.StatusCode or 0
-        local b = res.Body or ""
-        return true, code, b, "RequestAsync"
-    end
-    if syn and syn.request then
-        local r = syn.request({Url = url, Method = method, Headers = headers(), Body = body})
-        local code = r and r.StatusCode or 0
-        local b = r and (r.Body or r.body) or ""
-        if code >= 200 and code < 600 then return true, code, b, "syn.request" end
-    end
-    if http_request then
-        local r = http_request({Url = url, Method = method, Headers = headers(), Body = body})
-        local code = r and r.StatusCode or 0
-        local b = r and (r.Body or r.body) or ""
-        if code >= 200 and code < 600 then return true, code, b, "http_request" end
-    end
-    if request then
-        local r = request({Url = url, Method = method, Headers = headers(), Body = body})
-        local code = (r and (r.StatusCode or r.status_code)) or 0
-        local b = r and (r.Body or r.body) or ""
-        if code >= 200 and code < 600 then return true, code, b, "request" end
-    end
-    return false, 0, "", "none"
-end
-local function check_status()
-    local ok, code, b, m = raw_request("GET", SERVER .. "/status", "")
-    if ok and code >= 200 and code < 300 then
-        print("STATUS_OK", m, code)
+    if ok and res and res.StatusCode == 200 then
         return true
+    end
+    local qs = "?pkg=" .. HttpService:UrlEncode(PkgName)
+    local ok2, _ = pcall(function()
+        return game:HttpGet(SERVER_URL .. endpoint .. qs)
+    end)
+    return ok2
+end
+
+-- Khởi tạo: Đọc PkgName
+local function init()
+    -- Đợi game load chút
+    task.wait(2)
+    
+    local pkg = AppStorageService:GetItem("PkgName")
+    if pkg and pkg ~= "" then
+        PkgName = pkg
+        log("Detected Package: " .. PkgName)
     else
-        print("STATUS_FAIL", m, code)
-        return false
+        warn("PkgName not found in AppStorage! Script might not work correctly.")
+        -- Fallback test (có thể xóa nếu không cần)
+        -- PkgName = "com.roblox.client" 
     end
 end
-local function post(url, body)
-    local data = HttpService:JSONEncode(body)
-    local ok, code, bodyStr, method = raw_request("POST", url, data)
-    if ok and code >= 200 and code < 300 then
-        local ack_ok, ack = pcall(function() return HttpService:JSONDecode(bodyStr ~= "" and bodyStr or "{}") end)
-        if ack_ok and ack and ack.ok == true then
-            print("POST_OK", method, code)
-            return true, ack
+
+-- Tín hiệu 1: Đổi Nick
+local function requestChangeAccount()
+    if PkgName == "" then return end
+    local nonce = HttpService:GenerateGUID(false)
+    AppStorageService:SetItem("Signal", "ChangeAccount")
+    AppStorageService:SetItem("Nonce", nonce)
+    log("Emitting AppStorage ChangeAccount with Nonce: " .. tostring(nonce))
+    sendRequest("/change_account", {package = PkgName})
+end
+
+-- Tín hiệu 2: Reset Game (Mở lại link VIP/Normal)
+local function requestResetGame()
+    log("Sending Reset Game Signal...")
+    sendRequest("/reset_game", {package = PkgName})
+end
+
+-- Tín hiệu 3: Heartbeat (15s/lần)
+local function startHeartbeatLoop()
+    task.spawn(function()
+        while true do
+            if PkgName ~= "" then
+                sendRequest("/heartbeat", {package = PkgName})
+            end
+            task.wait(HEARTBEAT_INTERVAL)
         end
-    end
-    print("POST_FAIL", method, code)
-    return false, nil
+    end)
 end
-local session_id = tostring(math.random(1000000000)) .. "-" .. tostring(os.time())
-local function send_event(t, payload)
-    local p = payload or {}
-    p.session = session_id
-    p.place_id = game.PlaceId
-    p.job_id = game.JobId
-    local lp = Players.LocalPlayer
-    if lp then p.user_id = lp.UserId end
-    p.at = os.time()
-    local s = next_seq()
-    for i = 1, 5 do
-        local ok = post(SERVER .. "/event", {type = t, data = p, seq = s})
-        if ok then return true end
-        task.wait(backoff(i))
-    end
-    return false
-end
-local function handshake()
-    local s = next_seq()
-    local lp = Players.LocalPlayer
-    local uid = lp and lp.UserId or 0
-    for i = 1, 7 do
-        local ok = post(SERVER .. "/handshake", {session = session_id, user_id = uid, place_id = game.PlaceId, job_id = game.JobId, at = os.time(), seq = s})
-        if ok then return true end
-        task.wait(backoff(i))
-    end
-    return false
-end
-check_status()
-handshake()
-task.spawn(function()
-    while true do
-        send_event("heartbeat")
-        task.wait(5)
-    end
-end)
+
+-- === MAIN EXECUTION ===
+init()
+startHeartbeatLoop()
+
+-- EXPORT GLOBAL FUNCTIONS (Để script khác gọi)
+getgenv().AutoRoblox = {
+    ChangeAccount = requestChangeAccount,
+    ResetGame = requestResetGame,
+    GetPackage = function() return PkgName end
+}
+
+log("Script Loaded! Waiting for signals. Use AutoRoblox.ChangeAccount() or AutoRoblox.ResetGame()")
