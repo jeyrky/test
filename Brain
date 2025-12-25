@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 -- CONFIG
-local SERVER_URL = "http://192.168.1.230:8000"
+local SERVER_URL = "http://127.0.0.1:8000"
 local HEARTBEAT_INTERVAL = 15 -- Giây
 
 -- State
@@ -46,9 +46,8 @@ local function init()
         PkgName = pkg
         log("Detected Package: " .. PkgName)
     else
-        warn("PkgName not found in AppStorage! Script might not work correctly.")
-        -- Fallback test (có thể xóa nếu không cần)
-        -- PkgName = "com.roblox.client" 
+        PkgName = "com.roblox.client"
+        log("Fallback Package: " .. PkgName)
     end
 end
 
