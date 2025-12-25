@@ -1,27 +1,58 @@
 local HttpService = game:GetService("HttpService")
-local AppStorageService = game:GetService("AppStorageService")
 local Players = game:GetService("Players")
-local SERVER = (AppStorageService:GetItem("ServerUrl") or "http://192.168.1.103:8001")
+local SERVER = "http://192.168.1.103:8003"
+local function headers()
+    return {["Content-Type"] = "application/json"}
+end
+local function backoff(n)
+    local base = 0.25
+    local max = 2
+    local v = math.min(max, base * (2 ^ (n - 1)))
+    local j = math.random() * 0.2
+    return v + j
+end
+local seq = 0
+local function next_seq()
+    seq = seq + 1
+    return seq
+end
 local function post(url, body)
     local data = HttpService:JSONEncode(body)
     local ok, res = pcall(function()
-        return HttpService:RequestAsync({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = data})
+        return HttpService:RequestAsync({Url = url, Method = "POST", Headers = headers(), Body = data})
     end)
-    if ok and res and res.Success then return true, res.StatusCode end
+    if ok and res and res.Success then
+        local ack_ok, ack = pcall(function() return HttpService:JSONDecode(res.Body or "{}") end)
+        if ack_ok and ack and ack.ok == true then return true, ack end
+    end
     if syn and syn.request then
-        local r = syn.request({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = data})
-        if r and r.StatusCode and r.StatusCode >= 200 and r.StatusCode < 300 then return true, r.StatusCode end
+        local r = syn.request({Url = url, Method = "POST", Headers = headers(), Body = data})
+        local bodyStr = r and (r.Body or r.body) or ""
+        local code = r and r.StatusCode or 0
+        if code and code >= 200 and code < 300 then
+            local ack_ok, ack = pcall(function() return HttpService:JSONDecode(bodyStr ~= "" and bodyStr or "{}") end)
+            if ack_ok and ack and ack.ok == true then return true, ack end
+        end
     end
     if http_request then
-        local r = http_request({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = data})
-        if r and r.StatusCode and r.StatusCode >= 200 and r.StatusCode < 300 then return true, r.StatusCode end
+        local r = http_request({Url = url, Method = "POST", Headers = headers(), Body = data})
+        local bodyStr = r and (r.Body or r.body) or ""
+        local code = r and r.StatusCode or 0
+        if code and code >= 200 and code < 300 then
+            local ack_ok, ack = pcall(function() return HttpService:JSONDecode(bodyStr ~= "" and bodyStr or "{}") end)
+            if ack_ok and ack and ack.ok == true then return true, ack end
+        end
     end
     if request then
-        local r = request({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = data})
+        local r = request({Url = url, Method = "POST", Headers = headers(), Body = data})
+        local bodyStr = r and (r.Body or r.body) or ""
         local code = (r and (r.StatusCode or r.status_code)) or 0
-        if code >= 200 and code < 300 then return true, code end
+        if code >= 200 and code < 300 then
+            local ack_ok, ack = pcall(function() return HttpService:JSONDecode(bodyStr ~= "" and bodyStr or "{}") end)
+            if ack_ok and ack and ack.ok == true then return true, ack end
+        end
     end
-    return false, 0
+    return false, nil
 end
 local session_id = tostring(math.random(1000000000)) .. "-" .. tostring(os.time())
 local function send_event(t, payload)
@@ -32,15 +63,26 @@ local function send_event(t, payload)
     local lp = Players.LocalPlayer
     if lp then p.user_id = lp.UserId end
     p.at = os.time()
-    local ok = post(SERVER .. "/event", {type = t, data = p})
-    return ok
+    local s = next_seq()
+    for i = 1, 5 do
+        local ok = post(SERVER .. "/event", {type = t, data = p, seq = s})
+        if ok then return true end
+        task.wait(backoff(i))
+    end
+    return false
 end
 local function handshake()
-    local pkg = AppStorageService:GetItem("PkgName") or ""
-    post(SERVER .. "/handshake", {session = session_id, package = pkg, place_id = game.PlaceId, job_id = game.JobId, user_id = (Players.LocalPlayer and Players.LocalPlayer.UserId) or 0, at = os.time()})
+    local s = next_seq()
+    local lp = Players.LocalPlayer
+    local uid = lp and lp.UserId or 0
+    for i = 1, 7 do
+        local ok = post(SERVER .. "/handshake", {session = session_id, user_id = uid, place_id = game.PlaceId, job_id = game.JobId, at = os.time(), seq = s})
+        if ok then return true end
+        task.wait(backoff(i))
+    end
+    return false
 end
 handshake()
-send_event("change_account", {package = AppStorageService:GetItem("PkgName") or ""})
 task.spawn(function()
     while true do
         send_event("heartbeat")
