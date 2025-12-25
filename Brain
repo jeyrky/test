@@ -1,91 +1,49 @@
-local AppStorageService = game:GetService("AppStorageService")
 local HttpService = game:GetService("HttpService")
+local AppStorageService = game:GetService("AppStorageService")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-
--- CONFIG
-local SERVER_URL = "http://localhost:8000"
-local HEARTBEAT_INTERVAL = 15 -- Giây
-
--- State
-local PkgName = ""
-
-local function log(msg)
-    print("[AUTO] " .. tostring(msg))
-end
-
--- Hàm gửi request an toàn
-local function sendRequest(endpoint, data)
-    if PkgName == "" then return end
-    
-    local body = HttpService:JSONEncode(data)
-    local success, response = pcall(function()
-        return HttpService:PostAsync(
-            SERVER_URL .. endpoint,
-            body,
-            Enum.HttpContentType.ApplicationJson
-        )
+local SERVER = (AppStorageService:GetItem("ServerUrl") or "http://192.168.1.103:8001")
+local function post(url, body)
+    local data = HttpService:JSONEncode(body)
+    local ok, res = pcall(function()
+        return HttpService:RequestAsync({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = data})
     end)
-    
-    if not success then
-        warn("Request Failed ("..endpoint.."): " .. tostring(response))
+    if ok and res and res.Success then return true, res.StatusCode end
+    if syn and syn.request then
+        local r = syn.request({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = data})
+        if r and r.StatusCode and r.StatusCode >= 200 and r.StatusCode < 300 then return true, r.StatusCode end
     end
-    return success
-end
-
--- Khởi tạo: Đọc PkgName
-local function init()
-    -- Đợi game load chút
-    task.wait(2)
-    
-    local pkg = AppStorageService:GetItem("PkgName")
-    if pkg and pkg ~= "" then
-        PkgName = pkg
-        log("Detected Package: " .. PkgName)
-    else
-        warn("PkgName not found in AppStorage! Script might not work correctly.")
-        -- Fallback test (có thể xóa nếu không cần)
-        -- PkgName = "com.roblox.client" 
+    if http_request then
+        local r = http_request({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = data})
+        if r and r.StatusCode and r.StatusCode >= 200 and r.StatusCode < 300 then return true, r.StatusCode end
     end
+    if request then
+        local r = request({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = data})
+        local code = (r and (r.StatusCode or r.status_code)) or 0
+        if code >= 200 and code < 300 then return true, code end
+    end
+    return false, 0
 end
-
--- Tín hiệu 1: Đổi Nick
-local function requestChangeAccount()
-    if PkgName == "" then return end
-    local nonce = HttpService:GenerateGUID(false)
-    AppStorageService:SetItem("Signal", "ChangeAccount")
-    AppStorageService:SetItem("Nonce", nonce)
-    log("Emitting AppStorage ChangeAccount with Nonce: " .. tostring(nonce))
-    sendRequest("/change_account", {package = PkgName})
+local session_id = tostring(math.random(1000000000)) .. "-" .. tostring(os.time())
+local function send_event(t, payload)
+    local p = payload or {}
+    p.session = session_id
+    p.place_id = game.PlaceId
+    p.job_id = game.JobId
+    local lp = Players.LocalPlayer
+    if lp then p.user_id = lp.UserId end
+    p.at = os.time()
+    local ok = post(SERVER .. "/event", {type = t, data = p})
+    return ok
 end
-
--- Tín hiệu 2: Reset Game (Mở lại link VIP/Normal)
-local function requestResetGame()
-    log("Sending Reset Game Signal...")
-    sendRequest("/reset_game", {package = PkgName})
+local function handshake()
+    local pkg = AppStorageService:GetItem("PkgName") or ""
+    post(SERVER .. "/handshake", {session = session_id, package = pkg, place_id = game.PlaceId, job_id = game.JobId, user_id = (Players.LocalPlayer and Players.LocalPlayer.UserId) or 0, at = os.time()})
 end
-
--- Tín hiệu 3: Heartbeat (15s/lần)
-local function startHeartbeatLoop()
-    task.spawn(function()
-        while true do
-            if PkgName ~= "" then
-                sendRequest("/heartbeat", {package = PkgName})
-            end
-            task.wait(HEARTBEAT_INTERVAL)
-        end
-    end)
-end
-
--- === MAIN EXECUTION ===
-init()
-startHeartbeatLoop()
-
--- EXPORT GLOBAL FUNCTIONS (Để script khác gọi)
-getgenv().AutoRoblox = {
-    ChangeAccount = requestChangeAccount,
-    ResetGame = requestResetGame,
-    GetPackage = function() return PkgName end
-}
-
-log("Script Loaded! Waiting for signals. Use AutoRoblox.ChangeAccount() or AutoRoblox.ResetGame()")
+handshake()
+send_event("change_account", {package = AppStorageService:GetItem("PkgName") or ""})
+task.spawn(function()
+    while true do
+        send_event("heartbeat")
+        task.wait(5)
+    end
+end)
