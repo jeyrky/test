@@ -1,93 +1,121 @@
-local AppStorageService = game:GetService("AppStorageService")
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+repeat wait() until game:IsLoaded() 
+repeat wait() until game.Players.LocalPlayer 
+wait(1)
+local player = game.Players.LocalPlayer
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local runService = game:GetService("RunService")
 
--- CONFIG
-local SERVER_URL = "http://127.0.0.1:8000"
-local HEARTBEAT_INTERVAL = 15 -- Giây
-
--- State
-local PkgName = ""
-
-local function log(msg)
-    print("[AUTO] " .. tostring(msg))
+-- Hàm thay đổi đội
+local function SetTeam(teamName)
+    replicatedStorage.Remotes.CommF_:InvokeServer("SetTeam", teamName)
 end
 
--- Hàm gửi request an toàn
-local function sendRequest(endpoint, data)
-    if PkgName == "" then return end
-    local body = HttpService:JSONEncode(data)
-    local ok, res = pcall(function()
-        return HttpService:RequestAsync({
-            Url = SERVER_URL .. endpoint,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = body
-        })
-    end)
-    if ok and res and res.StatusCode == 200 then
-        return true
+-- Hàm di chuyển đến vị trí với hiệu ứng mượt mà
+local function flyToPositionSmooth(destination, speed, callback)
+    local humanoidRootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then
+        warn("HumanoidRootPart not found. Character may not be loaded.")
+        return
     end
-    local qs = "?pkg=" .. HttpService:UrlEncode(PkgName)
-    local ok2, _ = pcall(function()
-        return game:HttpGet(SERVER_URL .. endpoint .. qs)
-    end)
-    return ok2
-end
 
--- Khởi tạo: Đọc PkgName
-local function init()
-    -- Đợi game load chút
-    task.wait(2)
-    
-    local pkg = AppStorageService:GetItem("PkgName")
-    if pkg and pkg ~= "" then
-        PkgName = pkg
-        log("Detected Package: " .. PkgName)
-    else
-        PkgName = "com.roblox.client"
-        log("Fallback Package: " .. PkgName)
+    local startPosition = humanoidRootPart.Position
+    local distance = (destination.Position - startPosition).Magnitude
+    if distance == 0 then
+        warn("Start and destination positions are the same. No movement needed.")
+        return
     end
-end
 
--- Tín hiệu 1: Đổi Nick
-local function requestChangeAccount()
-    if PkgName == "" then return end
-    local nonce = HttpService:GenerateGUID(false)
-    AppStorageService:SetItem("Signal", "ChangeAccount")
-    AppStorageService:SetItem("Nonce", nonce)
-    log("Emitting AppStorage ChangeAccount with Nonce: " .. tostring(nonce))
-    sendRequest("/change_account", {package = PkgName})
-end
+    local travelTime = distance / speed
+    if travelTime <= 0 then
+        warn("Invalid travelTime calculated. Speed may be too high.")
+        return
+    end
 
--- Tín hiệu 2: Reset Game (Mở lại link VIP/Normal)
-local function requestResetGame()
-    log("Sending Reset Game Signal...")
-    sendRequest("/reset_game", {package = PkgName})
-end
+    local startTime = tick()
 
--- Tín hiệu 3: Heartbeat (15s/lần)
-local function startHeartbeatLoop()
-    task.spawn(function()
-        while true do
-            if PkgName ~= "" then
-                sendRequest("/heartbeat", {package = PkgName})
+    local connection
+    connection = runService.Heartbeat:Connect(function()
+        local elapsedTime = tick() - startTime
+        if elapsedTime < travelTime then
+            local progress = elapsedTime / travelTime
+            humanoidRootPart.CFrame = CFrame.new(startPosition:Lerp(destination.Position, progress))
+        else
+            humanoidRootPart.CFrame = destination
+            connection:Disconnect()
+            if callback then
+                callback()
             end
-            task.wait(HEARTBEAT_INTERVAL)
         end
     end)
 end
 
--- === MAIN EXECUTION ===
-init()
-startHeartbeatLoop()
+-- Hàm thực hiện hành động ngẫu nhiên
+local function RandomAction()
+    local success, result = pcall(function()
+        return replicatedStorage.Remotes.CommF_:InvokeServer("Cousin", "Buy")
+    end)
 
--- EXPORT GLOBAL FUNCTIONS (Để script khác gọi)
-getgenv().AutoRoblox = {
-    ChangeAccount = requestChangeAccount,
-    ResetGame = requestResetGame,
-    GetPackage = function() return PkgName end
-}
+    if not success then
+        warn("Error during RandomAction:", result)
+    end
+end
 
-log("Script Loaded! Waiting for signals. Use AutoRoblox.ChangeAccount() or AutoRoblox.ResetGame()")
+-- Hàm thả nhiều đồ từ ba lô
+local function DropMultipleItemsFromBackpack(quantity)
+    for _, tool in ipairs(player.Backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            tool.Parent = player.Character
+            local toolInCharacter = player.Character:FindFirstChild(tool.Name)
+            if toolInCharacter then
+                toolInCharacter.Parent = game.Workspace
+            end
+        end
+    end
+end
+
+-- Hàm gỡ bỏ công cụ
+local function UnequipTools()
+    for _, tool in ipairs(player.Character:GetChildren()) do
+        if tool:IsA("Tool") then
+            tool.Parent = player.Backpack
+        end
+    end
+end
+
+-- Gọi phương thức TravelDressrosa
+local function TravelDressrosa()
+    local success, result = pcall(function()
+        return replicatedStorage.Remotes.CommF_:InvokeServer("TravelDressrosa")
+    end)
+
+    if not success then
+        warn("Error during TravelMain:", result)
+    end
+end
+
+-- Vị trí bắt đầu
+local startPosition = CFrame.new(-391.223541, 151.14415, 381.626801, -0.996948361, 0.00316949282, 0.0780005008, -1.28056854e-08, 0.999175429, -0.0406005718, -0.0780648738, -0.0404766612, -0.996126115)
+
+-- Thực hiện các hành động
+SetTeam("Pirates")
+wait(1)
+TravelDressrosa()
+
+flyToPositionSmooth(startPosition, 200, function()
+    while true do
+        local success, errorMessage = pcall(function()
+            flyToPositionSmooth(startPosition, 200)
+        end)
+
+        if not success then
+            warn("Error during flyToPositionSmooth:", errorMessage)
+        end
+        
+        wait(1)
+        RandomAction()
+        wait(5)
+        UnequipTools()
+        DropMultipleItemsFromBackpack(200)
+        wait(10)
+    end
+end)
