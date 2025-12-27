@@ -181,12 +181,19 @@ end
 -- 3. MAIN LOGIC
 --------------------------------------------------------------------------------
 task.spawn(function()
-    -- Hàm tính giá Random Fruit an toàn
+    -- Hàm tính giá Random Fruit chính xác (Công thức chuẩn Blox Fruits + Premium)
     local function getRandomPrice()
         local s, level = pcall(function() return LP.Data.Level.Value end)
-        if not s or not level or level <= 0 then return 25000 end -- Mặc định min nếu lỗi
-        local cost = math.floor(level * 1000)
-        if cost < 25000 then cost = 25000 end
+        if not s or not level or level <= 0 then return 25000 end
+        
+        -- Công thức cơ bản: 25,000 + (Level - 1) * 150
+        local cost = 25000 + (level - 1) * 150
+        
+        -- Kiểm tra Premium (Giảm giá 20%)
+        if LP.MembershipType == Enum.MembershipType.Premium then
+            cost = math.floor(cost * 0.8)
+        end
+        
         return cost
     end
 
