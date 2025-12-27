@@ -201,6 +201,60 @@ task.spawn(function()
     local beli = LP.Data.Beli.Value
     local cost = getRandomPrice()
     
+    -- Tích hợp GUI Beli Tracker (Theo yêu cầu)
+    task.spawn(function()
+        local gui = Instance.new("ScreenGui")
+        gui.ResetOnSpawn = false
+        gui.Name = "BeliTracker"
+        gui.Parent = LP:WaitForChild("PlayerGui")
+        
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(0, 560, 0, 28)
+        label.Position = UDim2.new(0, 10, 0, 10)
+        label.BackgroundTransparency = 0.3
+        label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.TextScaled = false
+        label.Font = Enum.Font.SourceSansBold
+        label.TextSize = 18
+        label.Text = "Beli: ..."
+        label.Parent = gui
+        
+        local function formatNumber(n)
+            local s = tostring(math.floor(n))
+            local out = ""
+            local c = 0
+            for i = #s, 1, -1 do
+                out = s:sub(i, i) .. out
+                c = c + 1
+                if c == 3 and i > 1 then
+                    out = "," .. out
+                    c = 0
+                end
+            end
+            return out
+        end
+        
+        local function update()
+            local curBeli = LP.Data.Beli.Value
+            local curCost = getRandomPrice()
+            local diff = curCost - curBeli
+            local status = ""
+            if diff <= 0 then
+                status = "ĐỦ TIỀN! Đang Random..."
+            else
+                status = "Thiếu: $" .. formatNumber(diff)
+            end
+            
+            label.Text = string.format("Beli: $%s | Cần: $%s | %s", formatNumber(curBeli), formatNumber(curCost), status)
+        end
+        
+        while true do
+            update()
+            task.wait(1)
+        end
+    end)
+    
     print("------------------------------------------------")
     print("LEVEL: " .. tostring(LP.Data.Level.Value))
     print("BELI: " .. beli)
