@@ -23,52 +23,9 @@ print("--- MASTER CONTROLLER STARTED ---")
 -- FUNCTION: GỬI TÍN HIỆU RESET CHO PYTHON
 --------------------------------------------------------------------------------
 local function sendResetSignal()
-    local SERVER = "http://127.0.0.1:8000" 
-    local PKG = "com.roblox.client" -- Thay đổi nếu dùng clone khác 
-    local BODY = HttpService:JSONEncode({package = PKG}) 
-    
-    print("Sending Reset Game signal...") 
-
-    -- 1. Thử POST bằng HttpService 
-    local okp, resp = pcall(function() 
-        return HttpService:RequestAsync({ 
-            Url = SERVER .. "/reset_game", 
-            Method = "POST", 
-            Headers = {["Content-Type"] = "application/json"}, 
-            Body = BODY 
-        }) 
-    end) 
-
-    -- 2. Nếu lỗi, thử Executor Request (POST) 
-    if not (okp and resp and resp.StatusCode == 200) then 
-        local req = (syn and syn.request) or (http and http.request) or http_request or request 
-        local done = false 
-        if req then 
-            done = pcall(function() 
-                req({ 
-                    Url = SERVER .. "/reset_game", 
-                    Method = "POST", 
-                    Headers = {["Content-Type"] = "application/json"}, 
-                    Body = BODY 
-                }) 
-            end) 
-        end 
-        
-        -- 3. Fallback cuối cùng: GET 
-        if not done then 
-            local url = SERVER .. "/reset_game?pkg=" .. HttpService:UrlEncode(PKG) 
-            print("Fallback URL:", url) 
-            local okg, _ = pcall(function() return game:HttpGet(url) end) 
-            
-            -- Thử lại GET bằng executor nếu game:HttpGet cũng bị chặn 
-            if not okg and req then 
-                pcall(function() req({Url = url, Method = "GET"}) end) 
-            end 
-        end 
-    end 
-
-    print("Reset Signal Sent!")
+    -- Hàm rỗng, không làm gì cả theo yêu cầu
 end
+
 
 --------------------------------------------------------------------------------
 -- 1. AUTO TEAM JOIN
@@ -275,15 +232,26 @@ task.spawn(function()
         local startBeli = beli
         task.spawn(function()
             local startTime = os.clock()
+            local bought = false
             while os.clock() - startTime < 60 do -- Timeout 60s
                 task.wait(1)
                 local currentBeli = LP.Data.Beli.Value
-                if startBeli - currentBeli > 1000 then -- Tiền giảm > 1000 -> Đã mua
+                
+                -- Chỉ reset khi tiền THỰC SỰ giảm (tức là đã mua thành công)
+                if startBeli - currentBeli > 1000 then 
+                    bought = true
                     print(">>> GIAO DỊCH THÀNH CÔNG! Đã tiêu tiền.")
-                    task.wait(2) -- Đợi chút cho chắc
-                    sendResetSignal() -- Gửi tín hiệu Python
+                    
+                    -- Đợi thêm 5 giây để chắc chắn giao diện mua đã xong và trái đã vào túi
+                    task.wait(5) 
+                    
+                    -- sendResetSignal() -- Đã tắt reset
                     break
                 end
+            end
+            
+            if not bought then
+                print(">>> Hết thời gian chờ (60s) mà tiền không giảm -> Có thể lỗi mua hoặc lag.")
             end
         end)
         
@@ -310,14 +278,19 @@ task.spawn(function()
                     local startBeli = curBeli
                     task.spawn(function()
                         local startTime = os.clock()
+                        local bought = false
                         while os.clock() - startTime < 60 do
                             task.wait(1)
                             if startBeli - LP.Data.Beli.Value > 1000 then
-                                print(">>> [Check 15s] GIAO DỊCH THÀNH CÔNG! Gửi tín hiệu Reset...")
-                                task.wait(2)
-                                sendResetSignal()
+                                bought = true
+                                print(">>> [Check 15s] GIAO DỊCH THÀNH CÔNG! Đã tiêu tiền.")
+                                task.wait(5) -- Đợi 5s cho chắc
+                                -- sendResetSignal() -- Đã tắt reset
                                 break
                             end
+                        end
+                        if not bought then
+                            print(">>> [Check 15s] Timeout: Tiền không giảm, không reset.")
                         end
                     end)
                     
