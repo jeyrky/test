@@ -181,18 +181,28 @@ end
 -- 3. MAIN LOGIC
 --------------------------------------------------------------------------------
 task.spawn(function()
-    -- Đợi Data load
-    repeat task.wait() until LP:FindFirstChild("Data") and LP.Data:FindFirstChild("Level") and LP.Data:FindFirstChild("Beli")
+    -- Hàm tính giá Random Fruit an toàn
+    local function getRandomPrice()
+        local s, level = pcall(function() return LP.Data.Level.Value end)
+        if not s or not level or level <= 0 then return 25000 end -- Mặc định min nếu lỗi
+        local cost = math.floor(level * 1000)
+        if cost < 25000 then cost = 25000 end
+        return cost
+    end
+
+    -- Đợi Data load kỹ hơn (Level > 0)
+    local waitData = 0
+    repeat 
+        task.wait(1)
+        waitData = waitData + 1
+        if waitData % 5 == 0 then updateStatus("Đang tải dữ liệu người chơi...") end
+    until (LP:FindFirstChild("Data") and LP.Data:FindFirstChild("Level") and LP.Data:FindFirstChild("Beli") and LP.Data.Level.Value > 0) or waitData > 60
     
-    local level = LP.Data.Level.Value
     local beli = LP.Data.Beli.Value
-    
-    -- Tính giá Random Fruit
-    local cost = math.floor(level * 1000)
-    if cost < 25000 then cost = 25000 end
+    local cost = getRandomPrice()
     
     print("------------------------------------------------")
-    print("LEVEL: " .. level)
+    print("LEVEL: " .. tostring(LP.Data.Level.Value))
     print("BELI: " .. beli)
     print("GIÁ RANDOM: " .. cost)
     print("------------------------------------------------")
@@ -228,11 +238,9 @@ task.spawn(function()
             while true do
                 task.wait(15)
                 local curBeli = LP.Data.Beli.Value
-                local curLevel = LP.Data.Level.Value
-                local curCost = math.floor(curLevel * 1000)
-                if curCost < 25000 then curCost = 25000 end
+                local curCost = getRandomPrice()
                 
-                print("[Check 15s] Beli: " .. curBeli .. " | Cần: " .. curCost)
+                print(">>> [Check 15s] Beli: " .. curBeli .. " / Cần: " .. curCost)
                 
                 if curBeli >= curCost then
                     print(">>> [Check 15s] ĐÃ ĐỦ TIỀN! Bắt đầu Random ngay...")
