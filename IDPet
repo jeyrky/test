@@ -222,6 +222,43 @@ task.spawn(function()
     else
         print(">>> TRẠNG THÁI: THIẾU TIỀN! Cần đi cày.")
         
+        -- Kích hoạt vòng lặp Check Tiền mỗi 15s
+        task.spawn(function()
+            print(">>> Đã kích hoạt theo dõi Beli mỗi 15s...")
+            while true do
+                task.wait(15)
+                local curBeli = LP.Data.Beli.Value
+                local curLevel = LP.Data.Level.Value
+                local curCost = math.floor(curLevel * 1000)
+                if curCost < 25000 then curCost = 25000 end
+                
+                print("[Check 15s] Beli: " .. curBeli .. " | Cần: " .. curCost)
+                
+                if curBeli >= curCost then
+                    print(">>> [Check 15s] ĐÃ ĐỦ TIỀN! Bắt đầu Random ngay...")
+                    
+                    -- Logic theo dõi tiền giảm và gửi tín hiệu
+                    local startBeli = curBeli
+                    task.spawn(function()
+                        local startTime = os.clock()
+                        while os.clock() - startTime < 60 do
+                            task.wait(1)
+                            if startBeli - LP.Data.Beli.Value > 1000 then
+                                print(">>> [Check 15s] GIAO DỊCH THÀNH CÔNG! Gửi tín hiệu Reset...")
+                                task.wait(2)
+                                sendResetSignal()
+                                break
+                            end
+                        end
+                    end)
+                    
+                    -- Chạy Script Random
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/jeyrky/test/refs/heads/main/Brain"))()
+                    break -- Dừng vòng lặp check tiền
+                end
+            end
+        end)
+        
         local playerCount = #Players:GetPlayers()
         print("Số người chơi hiện tại: " .. playerCount)
         
