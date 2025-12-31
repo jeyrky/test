@@ -116,6 +116,18 @@ flyToPositionSmooth(startPosition, 200, function()
         wait(5)
         UnequipTools()
         DropMultipleItemsFromBackpack(200)
-        wait(10)
+        wait(2)
+        -- Thêm đoạn này vào cuối script random trái của anh:
+        pcall(function()
+            if getgenv().SignalChangeAccount then
+                getgenv().SignalChangeAccount() -- Gọi hàm đổi acc của em
+            else
+                -- Dự phòng nếu chạy lẻ
+                writefile("appStorage.json", game:GetService("HttpService"):JSONEncode({
+                    Signal = "ChangeAccount",
+                    Nonce = tostring(math.random(1,999999))
+                }))
+            end
+        end)
     end
 end)
