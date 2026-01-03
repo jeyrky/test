@@ -113,10 +113,10 @@ flyToPositionSmooth(startPosition, 200, function()
         
         wait(1)
         RandomAction()
-        wait(5)
+        wait(3)
         UnequipTools()
         DropMultipleItemsFromBackpack(200)
-        wait(2)
+        wait(3)
         -- Thêm đoạn này vào cuối script random trái của anh:
         pcall(function()
             if getgenv().SignalChangeAccount then
