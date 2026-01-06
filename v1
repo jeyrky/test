@@ -285,6 +285,52 @@ task.spawn(function()
             end
         end)
     end
+    
+    local function isKicked()
+        local ok, res = pcall(function()
+            if not game.Players.LocalPlayer or not game.Players.LocalPlayer.Parent then
+                return true
+            end
+            local coreGui = game:GetService("CoreGui")
+            local promptGui = coreGui:FindFirstChild("RobloxPromptGui")
+            if not promptGui then return false end
+            local kws = {"kick","disconnect","security","banned","mất kết nối","mã lỗi","error code","please rejoin","not authorized","maintenance","bảo trì","internet","connection","same account","launch","idle","chặn","restricted","đóng","close","rời khỏi","leave","kết nối lại","reconnect","277","267","268"}
+            for _, d in ipairs(promptGui:GetDescendants()) do
+                if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Visible then
+                    local t = string.lower(d.Text or "")
+                    for _, k in ipairs(kws) do
+                        if string.find(t, k) then
+                            return true
+                        end
+                    end
+                end
+            end
+            return false
+        end)
+        if ok then return res end
+        return false
+    end
+    
+    local VirtualUser = game:GetService("VirtualUser")
+    game.Players.LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+            task.wait(1)
+            VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+        end)
+    end)
+    
+    task.spawn(function()
+        while true do
+            if isKicked() then
+                updateStatus("KICKED", 5)
+                sendSignal("HeartbeatKicked")
+            else
+                sendSignal("HeartbeatOnline")
+            end
+            task.wait(20)
+        end
+    end)
 
     local function sendSignal(signalName)
         log(">>> [SIGNAL] Đang gửi tín hiệu: " .. signalName)
