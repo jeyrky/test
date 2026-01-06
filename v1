@@ -1,225 +1,833 @@
-local Lighting     = game:GetService("Lighting")
-local Terrain      = workspace:FindFirstChildOfClass("Terrain")
-local Players      = game:GetService("Players")
-local RunService   = game:GetService("RunService")
-local UserSettings = UserSettings():GetService("UserGameSettings")
-local VirtualInput = game:GetService("VirtualInputManager")
+--[[ 
+    MASTER CONTROLLER SCRIPT (SMART MODE)
+    Updated: Robust Signal Sending (Loop every 5s)
+]]
 
-local lp       = Players.LocalPlayer
-local char     = lp.Character or lp.CharacterAdded:Wait()
-local hrp      = char:WaitForChild("HumanoidRootPart")
-local humanoid = char:WaitForChild("Humanoid")
+if not game:IsLoaded() then game.Loaded:Wait() end
+repeat task.wait() until game.Players.LocalPlayer
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
--- Tắt GUI mặc định
-pcall(function()
-    game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
-end)
-
--- ⚙️ Tắt ánh sáng
-Lighting.GlobalShadows   = false
-Lighting.FogEnd          = 1000000
-Lighting.Brightness      = 0
-Lighting.OutdoorAmbient  = Color3.fromRGB(128, 128, 128)
-
--- ⚙️ Terrain
-if Terrain then
-    Terrain.WaterWaveSize      = 0
-    Terrain.WaterWaveSpeed     = 0
-    Terrain.WaterReflectance   = 0
-    Terrain.WaterTransparency  = 1
+-- Hàm log an toàn hiển thị lên Console Executor
+local function log(msg)
+    pcall(function()
+        print(msg)
+        if rconsoleprint then
+            rconsoleprint(msg .. "\n")
+        end
+    end)
 end
 
--- ⚙️ Tắt hiệu ứng toàn map
-local function removeEffects(obj)
-    for _, v in pairs(obj:GetDescendants()) do
-        if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") then
-            v.Enabled = false
-        elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
-            v.Enabled = false
-        elseif v:IsA("Decal") then
-            v.Transparency = 1
-        elseif v:IsA("Texture") then
-            v:Destroy()
+log("--- MASTER CONTROLLER STARTED (ROBUST SIGNAL VERSION) ---")
+
+--------------------------------------------------------------------------------
+-- 1. AUTO TEAM JOIN
+--------------------------------------------------------------------------------
+local function autoChooseTeam()
+    local teamName = "Pirates"
+    local commF = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_")
+    if commF and commF:IsA("RemoteFunction") then
+        pcall(function() commF:InvokeServer("SetTeam", teamName) end)
+    end
+    task.wait(1)
+    if LP.Team == nil then
+        local function click(btn)
+            if not btn then return end
+            local vim = game:GetService("VirtualInputManager")
+            local pos = btn.AbsolutePosition + (btn.AbsoluteSize/2)
+            vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, btn, 0)
+            vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, btn, 0)
+        end
+        for _, v in ipairs(game:GetService("CoreGui"):GetDescendants()) do
+            if (v:IsA("TextButton") or v:IsA("ImageButton")) and (v.Name:lower():find("pirate") or (v.Text and v.Text:lower():find("pirate"))) then
+                click(v) break
+            end
+        end
+        for _, v in ipairs(LP.PlayerGui:GetDescendants()) do
+             if (v:IsA("TextButton") or v:IsA("ImageButton")) and (v.Name:lower():find("pirate") or (v.Text and v.Text:lower():find("pirate"))) then
+                click(v) break
+            end
         end
     end
 end
 
-removeEffects(workspace)
-
-workspace.DescendantAdded:Connect(function(obj)
-    task.wait(0.1)
-    pcall(function()
-        if obj:IsA("Texture") then
-            obj:Destroy()
-        elseif obj:IsA("Decal") then
-            obj.Transparency = 1
-        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("PointLight") then
-            obj.Enabled = false
-        end
-    end)
-end)
-
-pcall(function()
-    UserSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
-end)
-
-lp.CharacterAdded:Connect(function(c)
-    removeEffects(c)
-end)
-
--- ===========================
--- 🚀 Auto ăn PET "Secret" / "Brainrot God"
--- ===========================
-
-local holdTime       = 3
-local restTime       = 0.7
-local followDistance = 1
-local checkInterval  = 5
-
-local allowedKeywords = { "Secret", "Brainrot God" }
-
-local lastPet     = nil
-local startPos    = Vector3.new(-410.32, -6.50, 255.72)
-local endPos      = Vector3.new(-411.93, -6.50, -137.21)
-local autoRunning = true
-
-local function isInZone(pos)
-    if not startPos or not endPos then return false end
-    local minX, maxX = math.min(startPos.X, endPos.X), math.max(startPos.X, endPos.X)
-    local minZ, maxZ = math.min(startPos.Z, endPos.Z), math.max(startPos.Z, endPos.Z)
-    return pos.X >= minX and pos.X <= maxX and pos.Z >= minZ and pos.Z <= maxZ
+local t0 = os.clock()
+while LP.Team == nil and os.clock() - t0 < 20 do
+    autoChooseTeam()
+    task.wait(1)
 end
 
-local function findClosestPet()
-    local nearest, nearestDist = nil, math.huge
-    for _, label in ipairs(workspace:GetDescendants()) do
-        if label:IsA("TextLabel") then
-            local name = label.Text
-            for _, word in ipairs(allowedKeywords) do
-                if string.lower(name):find(string.lower(word)) then
-                    local model = label:FindFirstAncestorOfClass("Model")
-                    local root  = model and model:FindFirstChildWhichIsA("BasePart")
-                    if model and root and model:IsDescendantOf(workspace) and isInZone(root.Position) then
-                        local dist = (hrp.Position - root.Position).Magnitude
-                        if dist < nearestDist then
-                            nearest = { model = model, root = root }
-                            nearestDist = dist
+--------------------------------------------------------------------------------
+-- 2. SMART SERVER HOP LOGIC (BLOCK REJOIN)
+--------------------------------------------------------------------------------
+local VISITED_FILE = "chest_visited.json"
+local function loadVisited()
+    local list = {}
+    local s, content = pcall(readfile, VISITED_FILE)
+    if s and content then
+        local s2, decoded = pcall(HttpService.JSONDecode, HttpService, content)
+        if s2 and decoded then list = decoded end
+    end
+    return list
+end
+
+local function saveVisited(jobId)
+    local list = loadVisited()
+    for _, id in ipairs(list) do
+        if id == jobId then return end
+    end
+    table.insert(list, jobId)
+    pcall(writefile, VISITED_FILE, HttpService:JSONEncode(list))
+end
+
+saveVisited(game.JobId) -- Block current server
+
+local function smartHop()
+    log("Đang tìm server ít người & khác server cũ...")
+    local visited = loadVisited()
+    local visitedSet = {}
+    for _, id in ipairs(visited) do visitedSet[id] = true end
+    
+    local req = (syn and syn.request) or http_request or request
+    local cursor = ""
+    local found = nil
+    
+    if req then
+        for i = 1, 10 do
+            local url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Asc&limit=100&cursor=" .. cursor
+            local ok, res = pcall(function() return req({Url = url, Method = "GET"}) end)
+            
+            if ok and res and res.Body then
+                local data = HttpService:JSONDecode(res.Body)
+                if data and data.data then
+                    for _, server in ipairs(data.data) do
+                        local playing = server.playing or 0
+                        local maxPlayers = server.maxPlayers or 0
+                        -- Chọn server < 12 người VÀ chưa từng vào
+                        if server.id ~= game.JobId and playing < 12 and not visitedSet[server.id] then
+                            found = server.id
+                            break
                         end
                     end
-                    break
+                end
+                if found then break end
+                if data.nextPageCursor then cursor = data.nextPageCursor else break end
+            end
+            task.wait(0.1)
+        end
+    end
+    
+    if found then
+        log("-> Tìm thấy server ngon: " .. found)
+        saveVisited(found)
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, found, LP)
+    else
+        log("-> Không tìm thấy server < 12 người. Random Teleport...")
+        TeleportService:Teleport(game.PlaceId, LP)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 3. MAIN LOGIC (ROBUST SIGNAL INTEGRATION)
+--------------------------------------------------------------------------------
+task.spawn(function()
+    -- 1. Wait for Data
+    local waitData = 0
+    repeat 
+        task.wait(1)
+        waitData = waitData + 1
+        if waitData % 5 == 0 then log("Đang tải dữ liệu người chơi...") end
+    until (LP:FindFirstChild("Data") and LP.Data:FindFirstChild("Level") and LP.Data:FindFirstChild("Beli") and LP.Data.Level.Value > 0) or waitData > 60
+
+    -- 2. Helpers
+    local function getPkgName()
+        local pkg = "unknown"
+        pcall(function()
+            if isfile and isfile("appStorage.json") then
+                local content = readfile("appStorage.json")
+                if content and #content > 0 then
+                    local js = HttpService:JSONDecode(content)
+                    if js.PkgName then pkg = js.PkgName end
                 end
             end
-        end
+        end)
+        return pkg
     end
-    return nearest
-end
+    
+    local pkgName = getPkgName()
+    log("Package Name: " .. pkgName)
 
-local function pressE(seconds)
-    VirtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    task.wait(seconds)
-    VirtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-end
+    local function updateStatus(msg, timeout)
+        pcall(function()
+            local g = LP.PlayerGui:FindFirstChild("JeyrkyDashboard")
+            -- [AUTO-UPDATE] Nếu thấy bản cũ (Chiều cao < 90) thì xóa đi tạo lại
+            if g and g:FindFirstChild("MainFrame") and g.MainFrame.Size.Y.Offset < 90 then
+                g:Destroy()
+                g = nil
+            end
 
-local function holdEOnPet(pet)
-    local t0 = tick()
-    while tick() - t0 < 5 do
-        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then return end
-        local dist = (hrp.Position - pet.root.Position).Magnitude
-        if dist <= followDistance then break end
-        humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
-        task.wait(0.1)
+            if not g then
+                g = Instance.new("ScreenGui")
+                g.Name = "JeyrkyDashboard"
+                g.Parent = LP.PlayerGui
+                g.ResetOnSpawn = false
+
+                -- Main Frame chứa tất cả
+                local f = Instance.new("Frame", g)
+                f.Name = "MainFrame"
+                f.Size = UDim2.new(0, 450, 0, 90) -- [ADJUST] Tăng chiều cao lên 90 cho thoáng
+                f.Position = UDim2.new(0.5, -225, 0.15, 0)
+                f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+                f.BackgroundTransparency = 0.2
+                f.BorderSizePixel = 0
+                f.ZIndex = 1
+                
+                local corner = Instance.new("UICorner", f)
+                corner.CornerRadius = UDim.new(0, 10)
+                
+                local stroke = Instance.new("UIStroke", f)
+                stroke.Color = Color3.fromRGB(255, 215, 0) -- Viền Vàng
+                stroke.Thickness = 2
+                stroke.Transparency = 0.5
+                
+                -- Layout: Xếp chồng dọc
+                local layout = Instance.new("UIListLayout", f)
+                layout.SortOrder = Enum.SortOrder.LayoutOrder
+                layout.Padding = UDim.new(0, 2)
+                layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+                layout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+                -- Spacer Top
+                local spacer = Instance.new("Frame", f)
+                spacer.Name = "Spacer"
+                spacer.LayoutOrder = 0
+                spacer.Size = UDim2.new(1, 0, 0, 5) -- Spacer 5px
+                spacer.BackgroundTransparency = 1
+
+                -- Dòng 1: LOGO (Cao nhất)
+                local l1 = Instance.new("TextLabel", f)
+                l1.Name = "Line1_Logo"
+                l1.LayoutOrder = 1
+                l1.Size = UDim2.new(1, 0, 0, 25)
+                l1.BackgroundTransparency = 1
+                l1.TextColor3 = Color3.fromRGB(255, 215, 0)
+                l1.Font = Enum.Font.GothamBlack
+                l1.TextSize = 18
+                l1.Text = "JEYRKY TOOL"
+                l1.ZIndex = 2
+                
+                -- Dòng 2: INFO (Beli - Nằm giữa)
+                local l2 = Instance.new("TextLabel", f)
+                l2.Name = "Line2_Info"
+                l2.LayoutOrder = 2
+                l2.Size = UDim2.new(1, 0, 0, 20)
+                l2.BackgroundTransparency = 1
+                l2.TextColor3 = Color3.fromRGB(255, 255, 255)
+                l2.Font = Enum.Font.GothamBold
+                l2.TextSize = 14 -- Tăng size lên 14 cho rõ
+                l2.Text = "Loading Info..."
+                l2.ZIndex = 2
+
+                -- Dòng 3: STATUS (Nằm dưới cùng)
+                local l3 = Instance.new("TextLabel", f)
+                l3.Name = "Line3_Status"
+                l3.LayoutOrder = 3
+                l3.Size = UDim2.new(1, 0, 0, 20)
+                l3.BackgroundTransparency = 1
+                l3.TextColor3 = Color3.fromRGB(0, 255, 255)
+                l3.Font = Enum.Font.Gotham
+                l3.TextSize = 13
+                l3.Text = "Waiting..."
+                l3.ZIndex = 2
+
+                -- Progress Bar
+                local barBg = Instance.new("Frame", f)
+                barBg.Name = "BarBG"
+                barBg.LayoutOrder = 4
+                barBg.Size = UDim2.new(0.9, 0, 0, 4)
+                barBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+                barBg.BorderSizePixel = 0
+                local barCorner = Instance.new("UICorner", barBg)
+                barCorner.CornerRadius = UDim.new(0, 4)
+
+                local bar = Instance.new("Frame", barBg)
+                bar.Name = "Bar"
+                bar.Size = UDim2.new(0, 0, 1, 0)
+                bar.BackgroundColor3 = Color3.fromRGB(0, 255, 255)
+                bar.BorderSizePixel = 0
+                local barCorner2 = Instance.new("UICorner", bar)
+                barCorner2.CornerRadius = UDim.new(0, 4)
+            end
+            
+            local f = g:FindFirstChild("MainFrame")
+            if f then
+                local l3 = f:FindFirstChild("Line3_Status")
+                if l3 then l3.Text = msg end
+                
+                if timeout and timeout > 0 then
+                    task.spawn(function()
+                        local bar = f:FindFirstChild("BarBG") and f.BarBG:FindFirstChild("Bar")
+                        if bar then
+                            local startTime = os.clock()
+                            while os.clock() - startTime < timeout do
+                                local progress = 1 - ((os.clock() - startTime) / timeout)
+                                bar.Size = UDim2.new(progress, 0, 1, 0)
+                                task.wait(0.05)
+                            end
+                            bar.Size = UDim2.new(0, 0, 1, 0)
+                        end
+                    end)
+                end
+            end
+        end)
     end
 
-    local followConn
-    followConn = RunService.RenderStepped:Connect(function()
-        if not pet.model:IsDescendantOf(workspace) or not isInZone(pet.root.Position) then
-            followConn:Disconnect()
-            return
+    local function sendSignal(signalName)
+        log(">>> [SIGNAL] Đang gửi tín hiệu: " .. signalName)
+        
+        -- GUI UPDATE
+        updateStatus("SENDING: " .. signalName .. " (" .. os.time() .. ")")
+
+        local body = HttpService:JSONEncode({
+            package = pkgName,
+            signal = signalName,
+            nonce = tostring(math.random(100000, 999999))
+        })
+        
+        local reqFunc = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
+        
+        -- Gửi song song (Parallel) để không bị block bởi timeout
+        
+        -- 1. POST (Executor) - Emulator
+        task.spawn(function()
+            if reqFunc then
+                pcall(function()
+                    reqFunc({
+                        Url = "http://10.0.2.2:8000/signal",
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = body
+                    })
+                end)
+            end
+        end)
+
+        -- 2. POST (Executor) - PC
+        task.spawn(function()
+            if reqFunc then
+                pcall(function()
+                    reqFunc({
+                        Url = "http://127.0.0.1:8000/signal",
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = body
+                    })
+                end)
+            end
+        end)
+            
+        -- 3. POST (HttpService) - Parallel
+        task.spawn(function()
+             pcall(function()
+                HttpService:RequestAsync({
+                    Url = "http://127.0.0.1:8000/signal",
+                    Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = body
+                })
+            end)
+        end)
+        
+        -- 4. FILE BACKUP (Always) - Ghi nhiều nơi
+        log(">>> [BACKUP] Ghi file appStorage.json...")
+        local js = {}
+        pcall(function()
+            if isfile and isfile("appStorage.json") then
+                 local c = readfile("appStorage.json")
+                 js = HttpService:JSONDecode(c)
+            end
+        end)
+        js.PkgName = pkgName
+        js.Signal = signalName
+        js.Nonce = tostring(math.random(100000, 999999))
+        js.Heartbeat = os.time()
+        
+        local content = HttpService:JSONEncode(js)
+        pcall(function() writefile("appStorage.json", content) end)
+        -- Thu ghi vao cac path khac neu co the
+        pcall(function() writefile("../appStorage.json", content) end) 
+    end
+    
+    -- *** LOOP SIGNAL SENDER ***
+    -- Gửi tín hiệu lặp lại mỗi 5s cho đến khi game đóng (do Python xử lý)
+    local isLooping = false
+    local function startSignalLoop(signalName)
+        if isLooping then return end -- Prevent double loops
+        isLooping = true
+        log(">>> [LOOP] Bắt đầu gửi liên tục tín hiệu: " .. signalName .. " (5s/lần)")
+        
+        -- Gửi ngay lập tức lần đầu tiên
+        sendSignal(signalName)
+        
+        task.spawn(function()
+            while true do
+                task.wait(5)
+                sendSignal(signalName)
+            end
+        end)
+    end
+    
+    -- Gửi tín hiệu TEST (Đã tắt để tránh spam/confuse)
+    -- task.spawn(function()
+    --    log(">>> Kiểm tra kết nối Python...")
+    --    task.wait(3)
+    --    sendSignal("TestConnection_Start")
+    -- end)
+
+    -- EXPOSE GLOBAL FUNCTION FOR EXTERNAL SCRIPTS
+    getgenv().SignalChangeAccount = function()
+        log(">>> [GLOBAL CALL] External script requested ChangeAccount")
+        startSignalLoop("ChangeAccount")
+    end
+
+    getgenv().SignalNotEnoughBeli = function()
+        log(">>> [GLOBAL CALL] External script requested NotEnoughBeli")
+        startSignalLoop("NotEnoughBeli")
+    end
+
+    -- 2b. Helpers for Persistent "Bought" State
+    -- [FIX] Dùng tên người chơi để tách biệt trạng thái giữa các acc
+    local LAST_ACTION_FILE = "last_action_" .. LP.Name .. ".txt"
+    
+    local function saveLastAction(action)
+        pcall(writefile, LAST_ACTION_FILE, action .. "|" .. tostring(os.time()))
+    end
+    
+    local function getLastAction()
+        local action, ts = "NONE", 0
+        pcall(function()
+            if isfile(LAST_ACTION_FILE) then
+                local content = readfile(LAST_ACTION_FILE)
+                local a, t = content:match("^(.*)|(%d+)$")
+                if a and t then
+                    action = a
+                    ts = tonumber(t) or 0
+                end
+            end
+        end)
+        return action, ts
+    end
+
+    local function getServerType()
+        local st = "VIP1" -- Default fallback
+        pcall(function()
+            if isfile and isfile("appStorage.json") then
+                local c = readfile("appStorage.json")
+                local j = HttpService:JSONDecode(c)
+                if j.ServerType then st = j.ServerType end
+            end
+        end)
+        return st
+    end
+
+    local function getRandomPrice()
+        local s, level = pcall(function() return LP.Data.Level.Value end)
+        if not s or not level or level <= 0 then return 25000 end
+        local cost = 25000 + (level - 1) * 150
+        if LP.MembershipType == Enum.MembershipType.Premium then
+            cost = math.floor(cost * 0.8)
         end
-        local dist = (hrp.Position - pet.root.Position).Magnitude
-        if dist > followDistance then
-            humanoid:MoveTo(Vector3.new(pet.root.Position.X, hrp.Position.Y, pet.root.Position.Z))
-        else
-            humanoid:MoveTo(hrp.Position)
+        return cost
+    end
+
+    -- 3. Logic Branching
+    local serverType = getServerType()
+    
+    -- [DEBUG] In rõ nội dung file để kiểm tra
+    task.spawn(function()
+        pcall(function()
+            if isfile and isfile("appStorage.json") then
+                log("DEBUG appStorage: " .. readfile("appStorage.json"))
+            else
+                log("DEBUG appStorage: FILE NOT FOUND")
+            end
+        end)
+    end)
+
+    local curBeli = LP.Data.Beli.Value
+    local cost = getRandomPrice()
+
+    log("---------------------------------------")
+    log("SERVER TYPE: " .. serverType)
+    log("BELI: " .. curBeli .. " | COST: " .. cost)
+    log("---------------------------------------")
+
+    local FARM_DONE = false
+    local HOP_ONCE_DONE = false
+    local HOP_TIMER_SECONDS = 120
+    pcall(function()
+        local g = getgenv and getgenv() or {}
+        local v = g.FarmHopSeconds or g.BeliHopSeconds
+        if type(v) == "number" and v > 0 then HOP_TIMER_SECONDS = v end
+    end)
+
+    -- GUI Tracker (Beli & Server Info) - Integrated into JeyrkyDashboard
+    task.spawn(function()
+        local function formatNumber(n)
+            return tostring(n):reverse():gsub("%d%d%d", "%1,"):reverse():gsub("^,", "")
+        end
+
+        while true do
+            local c = getRandomPrice()
+            local b = 0
+            pcall(function() b = LP.Data.Beli.Value end)
+            local diff = c - b
+            local st = (diff <= 0) and "ĐỦ TIỀN" or ("Thiếu " .. formatNumber(diff))
+            
+            -- Format màu sắc cho trạng thái
+            local serverColor = (serverType == "VIP1") and "VIP 1 (Random)" or "VIP 2 (Farm)"
+            local infoText = string.format("[%s] Beli: %s | Cần: %s | %s", serverColor, formatNumber(b), formatNumber(c), st)
+            
+            -- Update JeyrkyDashboard Line 2
+            local g = LP.PlayerGui:FindFirstChild("JeyrkyDashboard")
+            if g and g:FindFirstChild("MainFrame") then
+                local l2 = g.MainFrame:FindFirstChild("Line2_Info")
+                if l2 then
+                    l2.Text = infoText
+                    if diff <= 0 then
+                        l2.TextColor3 = Color3.fromRGB(0, 255, 0) -- Green
+                    else
+                        l2.TextColor3 = Color3.fromRGB(255, 255, 255) -- White
+                    end
+                end
+            end
+            
+            task.wait(1)
         end
     end)
 
-    while pet.model:IsDescendantOf(workspace) and isInZone(pet.root.Position) do
-        pressE(holdTime)
-        task.wait(restTime)
-    end
-
-    if followConn then followConn:Disconnect() end
-end
-
-task.spawn(function()
-    while true do
-        task.wait(checkInterval)
-        if autoRunning then
-            local pet = findClosestPet()
-            if pet and (not lastPet or pet.model ~= lastPet.model) then
-                lastPet = pet
-                holdEOnPet(pet)
-            elseif not pet then
-                lastPet = nil
+    if serverType == "VIP1" then
+        -- MODE: RANDOM FRUIT
+        if curBeli >= cost then
+            log(">>> [VIP1] Đủ tiền -> Chạy Random Fruit...")
+            updateStatus("Random")
+            
+            -- [UPDATED] Không tự gửi ChangeAccount nữa vì script Brain sẽ tự làm việc đó.
+            -- Chỉ giữ lại logic lưu trạng thái "BOUGHT" nếu cần thiết (nhưng vì script Brain tự xử lý nên có thể bỏ qua hoặc để script Brain tự lo)
+            
+            -- Exec Script
+            local success, err = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/jeyrky/test/refs/heads/main/Brain"))()
+            end)
+            if not success then
+                log("Lỗi load script Brain: " .. tostring(err))
+                updateStatus("ERROR LOAD SCRIPT: " .. tostring(err), 5)
+                -- Fallback: Nếu không load được script thì buộc phải tự next acc
+                task.wait(5)
+                startSignalLoop("ChangeAccount") 
+            end
+        else
+            -- Check "Bought" History
+            local lastAct, lastTime = getLastAction()
+            if lastAct == "BOUGHT" and (os.time() - lastTime) < 300 then
+                log(">>> [VIP1] Phát hiện vừa mua trái (History < 5p) -> Gửi lại ChangeAccount")
+                startSignalLoop("ChangeAccount")
+            else
+                log(">>> [VIP1] Thiếu tiền (Có: " .. curBeli .. " | Cần: " .. cost .. ") -> Gửi tín hiệu NotEnoughBeli")
+                
+                -- [DEBUG] Test writefile trực tiếp để xem có lỗi permission không
+                pcall(function()
+                    writefile("debug_signal_test.txt", "Test write from NotEnoughBeli logic at " .. tostring(os.time()))
+                    log(">>> [DEBUG] Write debug file OK")
+                end)
+    
+                startSignalLoop("NotEnoughBeli") -- Loop signal
             end
         end
+
+    elseif serverType == "VIP2" then
+        -- MODE: FARM BELI
+        if curBeli >= cost then
+            log(">>> [VIP2] Đã đủ tiền -> Gửi tín hiệu về VIP1 Random (LOOP 5s)")
+            startSignalLoop("EnoughBeliFarmDone") -- Loop signal
+        else
+            log(">>> [VIP2] Thiếu tiền -> Farm Chest...")
+            
+            -- Monitor money while farming
+            task.spawn(function()
+                while true do
+                    task.wait(5)
+                    if LP.Data.Beli.Value >= getRandomPrice() then
+                        FARM_DONE = true
+                        log(">>> [VIP2] Farm xong! Signal về VIP1 (LOOP 5s)...")
+                        updateStatus("Đủ Beli - Reset Account")
+                        startSignalLoop("EnoughBeliFarmDone") -- Loop signal
+                        break
+                    end
+                end
+            end)
+            task.spawn(function()
+                local endTime = os.clock() + HOP_TIMER_SECONDS
+                while os.clock() < endTime do
+                    if FARM_DONE then return end
+                    task.wait(1)
+                end
+                if not FARM_DONE and not HOP_ONCE_DONE then
+                    HOP_ONCE_DONE = true
+                    smartHop()
+                end
+            end)
+
+            -- Exec Farm Script
+            -- Check server load for Smart Hop
+            local pc = #game.Players:GetPlayers()
+            -- [FIX] Tăng giới hạn người chơi lên 40 để tránh hop liên tục
+            if pc > 40 then
+                log(">>> [VIP2] Server quá đông (>40) -> Smart Hop tìm server vắng...")
+                smartHop()
+            else
+                log(">>> [VIP2] Server ổn (<=40) -> Chạy Chest Script")
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/trongdeptraihucscript/Main/refs/heads/main/TN-Tp-Chest.lua"))()
+            end
+        end
+        
+    else
+        log(">>> [UNKNOWN MODE] ServerType không rõ: " .. tostring(serverType))
+        -- Fallback: Chạy random như bình thường
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/jeyrky/test/refs/heads/main/Brain"))()
     end
 end)
 
-local function autoWalkBetweenPoints()
-    local function moveTo(pos)
-        local stepSize = 20
-        local currentPos = hrp.Position
+local HttpService = game:GetService("HttpService")
+local BASE = "http://127.0.0.1:8000"
 
-        while (currentPos - pos).Magnitude > 3 do
-            if not autoRunning then break end
+-- 1. Detect Request Function (Executor dependent)
+local req = (syn and syn.request) or (http and http.request) or http_request or request
 
-            local dir = (pos - currentPos).Unit
-            local nextPos = currentPos + dir * math.min(stepSize, (pos - currentPos).Magnitude)
-
-            humanoid:MoveTo(Vector3.new(nextPos.X, hrp.Position.Y, nextPos.Z))
-
-            local t0 = tick()
-            while (hrp.Position - nextPos).Magnitude > 3 and tick() - t0 < 2 do
-                task.wait(0.1)
-            end
-
-            currentPos = hrp.Position
+-- 2. Function to read Package Name and Server Type from appStorage.json
+local SERVER_TYPE = "NORMAL"
+local function readPkg()
+    local ok, content = pcall(readfile, "appStorage.json")
+    if ok and content then
+        local ok2, js = pcall(HttpService.JSONDecode, HttpService, content)
+        if ok2 and js then
+             if js.ServerType then SERVER_TYPE = js.ServerType end
+             if js.PkgName then return js.PkgName end
         end
     end
+    return nil -- Let Python handle if unknown
+end
 
-    task.spawn(function()
-        while true do
-            if autoRunning then
-                task.wait(1)
-                moveTo(endPos)
-                task.wait(1)
-                moveTo(startPos)
-            else
-                task.wait(1)
-            end
+local PKG = readPkg()
+
+-- 2.1 Check Kick Status
+local function isKicked()
+    local success, result = pcall(function()
+        -- [Check 0] Player Removed
+        if not game.Players.LocalPlayer or not game.Players.LocalPlayer.Parent then
+            return true
         end
+
+        local coreGui = game:GetService("CoreGui")
+        local promptGui = coreGui:FindFirstChild("RobloxPromptGui")
+        if not promptGui then return false end
+        
+        -- [Enhanced Check] Scan toàn bộ RobloxPromptGui thay vì chỉ promptOverlay
+        -- Vì đôi khi UI thay đổi cấu trúc
+        local kick_keywords = {
+            "kick", "disconnect", "security", "banned",
+            "mất kết nối", "mã lỗi", "error code",
+            "please rejoin", "not authorized", "maintenance",
+            "bảo trì", "internet", "connection",
+            "same account", "launch", "idle",
+            "chặn", "restricted", "đóng", "close",
+            "rời khỏi", "leave", "kết nối lại", "reconnect",
+            "277", "267", "268" -- Các mã lỗi phổ biến
+        }
+
+        for _, descendant in pairs(promptGui:GetDescendants()) do
+             if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+                if descendant.Visible then
+                    local text = descendant.Text:lower()
+                    for _, kw in ipairs(kick_keywords) do
+                        if text:find(kw) then 
+                            -- Log nhẹ để debug nếu cần (nhưng user k thấy console)
+                            return true 
+                        end
+                    end
+                end
+             end
+        end
+
+        return false
+    end)
+    if success and result then return true end
+    return false
+end
+
+-- 3. Main Heartbeat Function
+local KICK_SENT = false
+
+local function sendRequest(endpoint, data)
+    local url = BASE .. endpoint
+    local body = HttpService:JSONEncode(data)
+    local headers = {["Content-Type"] = "application/json"}
+    local success = false
+
+    -- Method A: HttpService:RequestAsync (POST)
+    if not success then
+        pcall(function()
+            local response = HttpService:RequestAsync({
+                Url = url,
+                Method = "POST",
+                Headers = headers,
+                Body = body
+            })
+            if response.StatusCode == 200 then success = true end
+        end)
+    end
+
+    -- Method B: Executor Request (POST)
+    if not success and req then
+        pcall(function()
+            local response = req({
+                Url = url,
+                Method = "POST",
+                Headers = headers,
+                Body = body
+            })
+            if response and response.StatusCode == 200 then success = true end
+        end)
+    end
+    
+    -- Method C: GET Fallback
+    if not success then
+        -- Convert data to query string roughly
+        local query = ""
+        for k,v in pairs(data) do
+            query = query .. "&" .. k .. "=" .. tostring(v)
+        end
+        pcall(function()
+            game:HttpGet(url .. "?" .. query)
+        end)
+    end
+end
+
+local function sendHeartbeat()
+    -- Retry reading PKG if missing
+    if not PKG then PKG = readPkg() end
+
+    -- Check if kicked
+    if isKicked() then
+        if not KICK_SENT then
+            print("DETECTED KICKED - SENDING SIGNAL TO SERVER...")
+            sendRequest("/signal", {package = PKG, signal = "Kicked"})
+            KICK_SENT = true
+        else
+            print("DETECTED KICKED - WAITING FOR RESTART...")
+        end
+        return
+    end
+
+    local username = "Unknown"
+    pcall(function()
+        if game:GetService("Players").LocalPlayer then
+            username = game:GetService("Players").LocalPlayer.Name
+        end
+    end)
+    
+    if username ~= "Unknown" then
+        print("Sending Heartbeat for: " .. username .. " | Type: " .. SERVER_TYPE)
+    else
+        print("Sending Heartbeat (Username not found yet)")
+    end
+    
+    -- Gửi Heartbeat
+    sendRequest("/heartbeat", {
+        package = PKG, 
+        username = username,
+        server_type = SERVER_TYPE
+    })
+
+    -- Method D: AppStorage File Fallback (Keep this for redundancy)
+    pcall(function()
+        local js = {}
+        local ok, content = pcall(readfile, "appStorage.json")
+        if ok and content and #content > 0 then
+            local ok2, data = pcall(HttpService.JSONDecode, HttpService, content)
+            if ok2 and type(data) == "table" then js = data end
+        end
+        js.Heartbeat = os.time()
+        js.username = username
+        if PKG and not js.PkgName then js.PkgName = PKG end
+        -- Preserve ServerType if exists
+        if not js.ServerType then js.ServerType = SERVER_TYPE end
+        writefile("appStorage.json", HttpService:JSONEncode(js))
     end)
 end
 
-autoWalkBetweenPoints()
-
-local function autoJumpAndPlay()
+-- 4. Auto-loop every 10 seconds
+task.spawn(function()
     while true do
-        task.wait(30)
-        VirtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-        task.wait(0.1)
-        VirtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-
-        task.wait(15)
-
-        VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-        task.wait(0.1)
-        VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-
-        task.wait(45)
+        sendHeartbeat()
+        task.wait(10)
     end
+end)
+
+-- 5. Expose to global env for manual testing
+getgenv().OnlineHeartbeat = {
+    Heartbeat = sendHeartbeat
+}
+
+--[[
+    Anti AFK Script
+    Tự động tương tác để tránh bị Roblox kick sau 20 phút không hoạt động.
+]]
+
+local VirtualUser = game:GetService("VirtualUser")
+local Players = game:GetService("Players")
+
+-- Đợi LocalPlayer load xong
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    repeat wait() until Players.LocalPlayer
+    LocalPlayer = Players.LocalPlayer
 end
 
-task.spawn(autoJumpAndPlay)
+print("--> Anti AFK Script đã được kích hoạt!")
+
+-- Cách 1: Sử dụng Event Idled (Chuẩn nhất)
+-- Khi Roblox phát hiện người dùng không hoạt động, event này sẽ kích hoạt.
+-- Chúng ta sẽ giả lập một cú click chuột để reset timer.
+LocalPlayer.Idled:Connect(function()
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new()) -- Click chuột phải ảo
+        print("Anti AFK: Đã tự động tương tác để tránh bị kick.")
+    end)
+end)
+
+-- Cách 2: Vòng lặp Backup (Đề phòng trường hợp Event không nổ)
+-- Thực hiện click nhẹ mỗi 10 phút
+spawn(function()
+    while true do
+        wait(600) -- 10 phút
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end
+end)
+
+-- Gửi thông báo nhỏ lên màn hình (nếu hỗ trợ)
+pcall(function()
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "Anti AFK";
+        Text = "Đã bật chế độ treo máy!";
+        Duration = 5;
+    })
+end)
