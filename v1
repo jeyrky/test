@@ -179,7 +179,7 @@ task.spawn(function()
                 -- Main Frame chứa tất cả
                 local f = Instance.new("Frame", g)
                 f.Name = "MainFrame"
-                f.Size = UDim2.new(0, 450, 0, 90) -- [ADJUST] Tăng chiều cao lên 90 cho thoáng
+                f.Size = UDim2.new(0, 450, 0, 115) -- [ADJUST] Tăng chiều cao lên 115 để chứa thêm dòng Random
                 f.Position = UDim2.new(0.5, -225, 0.15, 0)
                 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
                 f.BackgroundTransparency = 0.2
@@ -228,14 +228,26 @@ task.spawn(function()
                 l2.BackgroundTransparency = 1
                 l2.TextColor3 = Color3.fromRGB(255, 255, 255)
                 l2.Font = Enum.Font.GothamBold
-                l2.TextSize = 14 -- Tăng size lên 14 cho rõ
+                l2.TextSize = 14
                 l2.Text = "Loading Info..."
                 l2.ZIndex = 2
 
-                -- Dòng 3: STATUS (Nằm dưới cùng)
+                -- Dòng 3: RANDOM CHECK (MỚI)
+                local lRandom = Instance.new("TextLabel", f)
+                lRandom.Name = "Line_Random"
+                lRandom.LayoutOrder = 3
+                lRandom.Size = UDim2.new(1, 0, 0, 20)
+                lRandom.BackgroundTransparency = 1
+                lRandom.TextColor3 = Color3.fromRGB(200, 200, 200)
+                lRandom.Font = Enum.Font.GothamBold
+                lRandom.TextSize = 13
+                lRandom.Text = "Check Random..."
+                lRandom.ZIndex = 2
+
+                -- Dòng 4: STATUS (Nằm dưới cùng)
                 local l3 = Instance.new("TextLabel", f)
                 l3.Name = "Line3_Status"
-                l3.LayoutOrder = 3
+                l3.LayoutOrder = 4
                 l3.Size = UDim2.new(1, 0, 0, 20)
                 l3.BackgroundTransparency = 1
                 l3.TextColor3 = Color3.fromRGB(0, 255, 255)
@@ -247,7 +259,7 @@ task.spawn(function()
                 -- Progress Bar
                 local barBg = Instance.new("Frame", f)
                 barBg.Name = "BarBG"
-                barBg.LayoutOrder = 4
+                barBg.LayoutOrder = 5
                 barBg.Size = UDim2.new(0.9, 0, 0, 4)
                 barBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
                 barBg.BorderSizePixel = 0
@@ -636,7 +648,57 @@ task.spawn(function()
                 log(">>> [VIP2] Server quá đông (>40) -> Smart Hop tìm server vắng...")
                 smartHop()
             else
-                log(">>> [VIP2] Server ổn (<=40) -> Chạy Chest Script")
+                log(">>> [VIP2] Server ổn (<=40) -> Chạy Chest Script (SILENT MODE)")
+                
+                -- --- SILENT LOAD & HIDE UI LOGIC ---
+                task.spawn(function()
+                    -- 1. Chặn Notification
+                    pcall(function()
+                        local mt = getrawmetatable(game)
+                        local old = mt.__namecall
+                        if setreadonly then setreadonly(mt, false) end
+                        mt.__namecall = newcclosure(function(self, ...)
+                            local args = {...}
+                            if getnamecallmethod() == "SetCore" and args[1] == "SendNotification" then
+                                return -- Block Notification
+                            end
+                            return old(self, ...)
+                        end)
+                        if setreadonly then setreadonly(mt, true) end
+                    end)
+
+                    -- 2. Ẩn GUI (Trừ JeyrkyDashboard & System)
+                    local function hideGui(g)
+                        if g:IsA("ScreenGui") and g.Name ~= "JeyrkyDashboard" then
+                            local sys = {"RobloxGui","TopBar","CoreScripts","PurchasePrompt","HeadsetDisconnectedDialog","TeleportGui","RobloxLoadingGui","Chat","BubbleChat","RbxCameraUI"}
+                            for _,s in pairs(sys) do if g.Name == s then return end end
+                            
+                            g.Enabled = false
+                            -- Hook để giữ trạng thái ẩn
+                            local s, e = pcall(function() 
+                                g:GetPropertyChangedSignal("Enabled"):Connect(function() 
+                                    if g.Enabled then g.Enabled = false end 
+                                end) 
+                            end)
+                            -- Ẩn các frame con
+                            for _, c in pairs(g:GetChildren()) do
+                                if c:IsA("Frame") or c:IsA("ScrollingFrame") or c:IsA("ImageLabel") then c.Visible = false end
+                            end
+                        end
+                    end
+
+                    game:GetService("CoreGui").ChildAdded:Connect(hideGui)
+                    local lp = game:GetService("Players").LocalPlayer
+                    if lp then
+                        local pg = lp:WaitForChild("PlayerGui", 5)
+                        if pg then 
+                            pg.ChildAdded:Connect(hideGui) 
+                            for _,v in pairs(pg:GetChildren()) do hideGui(v) end
+                        end
+                    end
+                end)
+
+                -- 3. Load Script
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/trongdeptraihucscript/Main/refs/heads/main/TN-Tp-Chest.lua"))()
             end
         end
