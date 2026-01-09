@@ -572,6 +572,36 @@ task.spawn(function()
                         l2.TextColor3 = Color3.fromRGB(255, 255, 255) -- White
                     end
                 end
+
+                -- [ADDON] Update Random Info (Line_Random)
+                local lastAct, lastTime = getLastAction()
+                local randomText = "Random: ???"
+                local randomColor = Color3.fromRGB(200, 200, 200)
+
+                if lastAct == "BOUGHT" then
+                    local cooldown = 7200 -- 2 hours
+                    local timeSince = os.time() - lastTime
+                    local remaining = cooldown - timeSince
+                    if remaining > 0 then
+                        local h = math.floor(remaining / 3600)
+                        local m = math.floor((remaining % 3600) / 60)
+                        local s = remaining % 60
+                        randomText = string.format("Next Random: %02d:%02d:%02d", h, m, s)
+                        randomColor = Color3.fromRGB(255, 100, 100) -- Red
+                    else
+                        randomText = "Random: READY"
+                        randomColor = Color3.fromRGB(0, 255, 0) -- Green
+                    end
+                else
+                    randomText = "Random: READY"
+                    randomColor = Color3.fromRGB(0, 255, 0) -- Green
+                end
+
+                local lRandom = g.MainFrame:FindFirstChild("Line_Random")
+                if lRandom then
+                    lRandom.Text = randomText
+                    lRandom.TextColor3 = randomColor
+                end
             end
             
             task.wait(1)
