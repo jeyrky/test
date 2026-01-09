@@ -640,6 +640,37 @@ task.spawn(function()
                 end
             end)
 
+            -- [NEW FEATURE] Check Beli Stuck (30s) -> Low User Server
+            task.spawn(function()
+                local lastBeli = 0
+                pcall(function() lastBeli = LP.Data.Beli.Value end)
+                local lastChange = os.clock()
+
+                while true do
+                    task.wait(1)
+                    if FARM_DONE or HOP_ONCE_DONE then break end
+                    
+                    local cur = 0
+                    local s = pcall(function() cur = LP.Data.Beli.Value end)
+                    if s then
+                        if cur ~= lastBeli then
+                            lastBeli = cur
+                            lastChange = os.clock()
+                        else
+                            -- Beli unchanged
+                            if os.clock() - lastChange > 30 then
+                                log(">>> [VIP2] Beli không tăng trong 30s -> Smart Hop (Low User)...")
+                                if not FARM_DONE and not HOP_ONCE_DONE then
+                                    HOP_ONCE_DONE = true
+                                    smartHop()
+                                end
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+
             -- Exec Farm Script
             -- Check server load for Smart Hop
             local pc = #game.Players:GetPlayers()
