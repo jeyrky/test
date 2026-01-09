@@ -718,6 +718,43 @@ task.spawn(function()
                         end
                     end
 
+                    -- [ADDON] Auto-Close "Reset Config" Popup
+                    task.spawn(function()
+                        while true do
+                            task.wait(1)
+                            pcall(function()
+                                local CoreGui = game:GetService("CoreGui")
+                                local PlayerGui = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+                                
+                                local function checkAndClose(parent)
+                                    if not parent then return end
+                                    for _, v in ipairs(parent:GetDescendants()) do
+                                        if v:IsA("TextLabel") and (string.find(v.Text, "Yes Or No") or string.find(v.Text, "want reset Config")) then
+                                            local g = v:FindFirstAncestorWhichIsA("ScreenGui")
+                                            if g then
+                                                -- Try to find "No" button
+                                                for _, b in ipairs(g:GetDescendants()) do
+                                                    if (b:IsA("TextButton") or b:IsA("ImageButton")) and (b.Name == "No" or (b:IsA("TextButton") and b.Text == "No")) then
+                                                        -- Click No
+                                                        local vim = game:GetService("VirtualInputManager")
+                                                        local pos = b.AbsolutePosition + (b.AbsoluteSize/2)
+                                                        vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, b, 0)
+                                                        vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, b, 0)
+                                                        task.wait(0.1)
+                                                    end
+                                                end
+                                                g:Destroy()
+                                            end
+                                        end
+                                    end
+                                end
+                                
+                                checkAndClose(CoreGui)
+                                checkAndClose(PlayerGui)
+                            end)
+                        end
+                    end)
+
                     game:GetService("CoreGui").ChildAdded:Connect(hideGui)
                     local lp = game:GetService("Players").LocalPlayer
                     if lp then
