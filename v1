@@ -552,7 +552,17 @@ task.spawn(function()
             
             -- Update JeyrkyDashboard Line 2
             local g = LP.PlayerGui:FindFirstChild("JeyrkyDashboard")
+            if not g then
+                -- Recreate if missing (Force update status to trigger creation)
+                updateStatus("Recreating UI...", 0)
+                g = LP.PlayerGui:FindFirstChild("JeyrkyDashboard")
+            end
+            
             if g and g:FindFirstChild("MainFrame") then
+                -- [ADDON] Force Visible if hidden
+                g.Enabled = true
+                g.MainFrame.Visible = true
+
                 local l2 = g.MainFrame:FindFirstChild("Line2_Info")
                 if l2 then
                     l2.Text = infoText
