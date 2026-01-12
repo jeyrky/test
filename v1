@@ -4,6 +4,8 @@
 ]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
+-- [FIX] Chờ 5s để Executor Mobile (Arceus/Delta/Fluxus) ổn định hook trước khi chạy
+task.wait(5)
 repeat task.wait() until game.Players.LocalPlayer
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
