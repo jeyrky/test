@@ -4,11 +4,18 @@
 ]]
 
 if not game:IsLoaded() then game.Loaded:Wait() end
--- [FIX] Chờ 5s để Executor Mobile (Arceus/Delta/Fluxus) ổn định hook trước khi chạy
-task.wait(5)
-repeat task.wait() until game.Players.LocalPlayer
+
+-- [FIX] Wait for PlayerGui (Load UI chọn phe)
 local Players = game:GetService("Players")
+repeat task.wait() until Players.LocalPlayer
 local LP = Players.LocalPlayer
+repeat task.wait() until LP:FindFirstChild("PlayerGui")
+-- Chờ UI con load xong
+local pg = LP.PlayerGui
+repeat task.wait() until #pg:GetChildren() > 0
+
+-- [FIX] Chờ thêm 5s để bảng chọn phe hiện rõ
+task.wait(5)
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
