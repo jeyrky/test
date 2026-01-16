@@ -527,10 +527,11 @@ task.spawn(function()
 
     local curBeli = LP.Data.Beli.Value
     local cost = getRandomPrice()
+    local targetCost = cost * 2
 
     log("---------------------------------------")
     log("SERVER TYPE: " .. serverType)
-    log("BELI: " .. curBeli .. " | COST: " .. cost)
+    log("BELI: " .. curBeli .. " | COST 1x: " .. cost .. " | TARGET 2x: " .. targetCost)
     log("---------------------------------------")
 
     local FARM_DONE = false
@@ -657,9 +658,9 @@ task.spawn(function()
         end
 
     elseif serverType == "VIP2" then
-        -- MODE: FARM BELI
-        if curBeli >= cost then
-            log(">>> [VIP2] Đã đủ tiền -> Gửi tín hiệu về VIP1 Random (LOOP 5s)")
+        -- MODE: FARM BELI (MỤC TIÊU: ĐỦ TIỀN CHO 2 LẦN RANDOM)
+        if curBeli >= targetCost then
+            log(">>> [VIP2] Đã đủ tiền x2 Beli -> Gửi tín hiệu về VIP1 Random (LOOP 5s)")
             startSignalLoop("EnoughBeliFarmDone") -- Loop signal
         else
             log(">>> [VIP2] Thiếu tiền -> Farm Chest...")
@@ -668,9 +669,9 @@ task.spawn(function()
             task.spawn(function()
                 while true do
                     task.wait(5)
-                    if LP.Data.Beli.Value >= getRandomPrice() then
+                    if LP.Data.Beli.Value >= targetCost then
                         FARM_DONE = true
-                        log(">>> [VIP2] Farm xong! Signal về VIP1 (LOOP 5s)...")
+                        log(">>> [VIP2] Farm đủ x2 Beli! Signal về VIP1 (LOOP 5s)...")
                         updateStatus("Đủ Beli - Reset Account")
                         startSignalLoop("EnoughBeliFarmDone") -- Loop signal
                         break
