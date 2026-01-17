@@ -511,8 +511,24 @@ task.spawn(function()
         return cost
     end
 
+    local function isPrivateServer()
+        local ok1, id = pcall(function() return game.PrivateServerId end)
+        if ok1 and id and id ~= "" then return true end
+        local ok2, owner = pcall(function() return game.PrivateServerOwnerId end)
+        if ok2 and owner and owner ~= 0 then return true end
+        return false
+    end
+
+    local function getEffectiveServerType()
+        local st = getServerType()
+        if st == "VIP1" and not isPrivateServer() then
+            return "VIP2"
+        end
+        return st
+    end
+
     -- 3. Logic Branching
-    local serverType = getServerType()
+    local serverType = getEffectiveServerType()
     
     -- [DEBUG] In rõ nội dung file để kiểm tra
     task.spawn(function()
