@@ -511,34 +511,8 @@ task.spawn(function()
         return cost
     end
 
-    local function detectBeliMultiplier()
-        local mult = 1
-        pcall(function()
-            local pg = LP:FindFirstChild("PlayerGui")
-            if not pg then return end
-            for _, d in ipairs(pg:GetDescendants()) do
-                if d:IsA("TextLabel") and d.Visible then
-                    local t = string.lower(d.Text or "")
-                    if (t:find("x3") or t:find("3x")) and (t:find("beli") or t:find("money")) then
-                        mult = 3
-                        break
-                    elseif (t:find("x2") or t:find("2x")) and (t:find("beli") or t:find("money")) and mult < 3 then
-                        mult = 2
-                    end
-                end
-            end
-        end)
-        return mult
-    end
-
-    local function getEffectiveServerType()
-        local st = getServerType()
-        SERVER_TYPE = st
-        return st
-    end
-
     -- 3. Logic Branching
-    local serverType = getEffectiveServerType()
+    local serverType = getServerType()
     
     -- [DEBUG] In rõ nội dung file để kiểm tra
     task.spawn(function()
@@ -553,11 +527,10 @@ task.spawn(function()
 
     local curBeli = LP.Data.Beli.Value
     local cost = getRandomPrice()
-    local targetCost = cost * 1
 
     log("---------------------------------------")
     log("SERVER TYPE: " .. serverType)
-    log("BELI: " .. curBeli .. " | COST 1x: " .. cost .. " | TARGET 2x: " .. targetCost)
+    log("BELI: " .. curBeli .. " | COST: " .. cost)
     log("---------------------------------------")
 
     local FARM_DONE = false
@@ -582,11 +555,8 @@ task.spawn(function()
             local diff = c - b
             local st = (diff <= 0) and "ĐỦ TIỀN" or ("Thiếu " .. formatNumber(diff))
             
-            local multiplier = detectBeliMultiplier()
+            -- Format màu sắc cho trạng thái
             local serverColor = (serverType == "VIP1") and "VIP 1 (Random)" or "VIP 2 (Farm)"
-            if multiplier > 1 then
-                serverColor = serverColor .. string.format(" | x%d Beli", multiplier)
-            end
             local infoText = string.format("[%s] Beli: %s | Cần: %s | %s", serverColor, formatNumber(b), formatNumber(c), st)
             
             -- Update JeyrkyDashboard Line 2
@@ -614,36 +584,26 @@ task.spawn(function()
 
                 -- [ADDON] Update Random Info (Line_Random)
                 local lastAct, lastTime = getLastAction()
-                local randomText
-                local randomColor
+                local randomText = "Random: ???"
+                local randomColor = Color3.fromRGB(200, 200, 200)
 
                 if lastAct == "BOUGHT" then
-                    local cooldown = 7200
+                    local cooldown = 7200 -- 2 hours
                     local timeSince = os.time() - lastTime
                     local remaining = cooldown - timeSince
                     if remaining > 0 then
                         local h = math.floor(remaining / 3600)
                         local m = math.floor((remaining % 3600) / 60)
                         local s = remaining % 60
-                        randomText = string.format("Time: %02d:%02d:%02d", h, m, s)
-                        randomColor = Color3.fromRGB(255, 100, 100)
+                        randomText = string.format("Next Random: %02d:%02d:%02d", h, m, s)
+                        randomColor = Color3.fromRGB(255, 100, 100) -- Red
                     else
-                        if diff <= 0 then
-                            randomText = "Time: Đủ thời gian"
-                            randomColor = Color3.fromRGB(0, 255, 0)
-                        else
-                            randomText = string.format("Time: chờ thêm %s Beli mới có thể random", formatNumber(diff))
-                            randomColor = Color3.fromRGB(255, 255, 0)
-                        end
+                        randomText = "Random: READY"
+                        randomColor = Color3.fromRGB(0, 255, 0) -- Green
                     end
                 else
-                    if diff <= 0 then
-                        randomText = "Time: Đủ thời gian"
-                        randomColor = Color3.fromRGB(0, 255, 0)
-                    else
-                        randomText = string.format("Time: chờ thêm %s Beli mới có thể random", formatNumber(diff))
-                        randomColor = Color3.fromRGB(255, 255, 0)
-                    end
+                    randomText = "Random: READY"
+                    randomColor = Color3.fromRGB(0, 255, 0) -- Green
                 end
 
                 local lRandom = g.MainFrame:FindFirstChild("Line_Random")
@@ -661,7 +621,6 @@ task.spawn(function()
         -- MODE: RANDOM FRUIT
         if curBeli >= cost then
             log(">>> [VIP1] Đủ tiền -> Chạy Random Fruit...")
-            saveLastAction("BOUGHT")
             updateStatus("Random")
             
             -- [UPDATED] Không tự gửi ChangeAccount nữa vì script Brain sẽ tự làm việc đó.
@@ -698,9 +657,9 @@ task.spawn(function()
         end
 
     elseif serverType == "VIP2" then
-        -- MODE: FARM BELI (MỤC TIÊU: ĐỦ TIỀN CHO 2 LẦN RANDOM)
-        if curBeli >= targetCost then
-            log(">>> [VIP2] Đã đủ tiền x2 Beli -> Gửi tín hiệu về VIP1 Random (LOOP 5s)")
+        -- MODE: FARM BELI
+        if curBeli >= cost then
+            log(">>> [VIP2] Đã đủ tiền -> Gửi tín hiệu về VIP1 Random (LOOP 5s)")
             startSignalLoop("EnoughBeliFarmDone") -- Loop signal
         else
             log(">>> [VIP2] Thiếu tiền -> Farm Chest...")
@@ -709,9 +668,9 @@ task.spawn(function()
             task.spawn(function()
                 while true do
                     task.wait(5)
-                    if LP.Data.Beli.Value >= targetCost then
+                    if LP.Data.Beli.Value >= getRandomPrice() then
                         FARM_DONE = true
-                        log(">>> [VIP2] Farm đủ x2 Beli! Signal về VIP1 (LOOP 5s)...")
+                        log(">>> [VIP2] Farm xong! Signal về VIP1 (LOOP 5s)...")
                         updateStatus("Đủ Beli - Reset Account")
                         startSignalLoop("EnoughBeliFarmDone") -- Loop signal
                         break
