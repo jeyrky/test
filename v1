@@ -553,7 +553,7 @@ task.spawn(function()
 
     local curBeli = LP.Data.Beli.Value
     local cost = getRandomPrice()
-    local targetCost = cost * 2
+    local targetCost = cost * 1
 
     log("---------------------------------------")
     log("SERVER TYPE: " .. serverType)
