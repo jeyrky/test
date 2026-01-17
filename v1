@@ -511,6 +511,26 @@ task.spawn(function()
         return cost
     end
 
+    local function detectBeliMultiplier()
+        local mult = 1
+        pcall(function()
+            local pg = LP:FindFirstChild("PlayerGui")
+            if not pg then return end
+            for _, d in ipairs(pg:GetDescendants()) do
+                if d:IsA("TextLabel") and d.Visible then
+                    local t = string.lower(d.Text or "")
+                    if (t:find("x3") or t:find("3x")) and (t:find("beli") or t:find("money")) then
+                        mult = 3
+                        break
+                    elseif (t:find("x2") or t:find("2x")) and (t:find("beli") or t:find("money")) and mult < 3 then
+                        mult = 2
+                    end
+                end
+            end
+        end)
+        return mult
+    end
+
     local function getEffectiveServerType()
         local st = getServerType()
         SERVER_TYPE = st
@@ -562,8 +582,11 @@ task.spawn(function()
             local diff = c - b
             local st = (diff <= 0) and "ĐỦ TIỀN" or ("Thiếu " .. formatNumber(diff))
             
-            -- Format màu sắc cho trạng thái
+            local multiplier = detectBeliMultiplier()
             local serverColor = (serverType == "VIP1") and "VIP 1 (Random)" or "VIP 2 (Farm)"
+            if multiplier > 1 then
+                serverColor = serverColor .. string.format(" | x%d Beli", multiplier)
+            end
             local infoText = string.format("[%s] Beli: %s | Cần: %s | %s", serverColor, formatNumber(b), formatNumber(c), st)
             
             -- Update JeyrkyDashboard Line 2
