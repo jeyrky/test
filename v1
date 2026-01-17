@@ -614,26 +614,36 @@ task.spawn(function()
 
                 -- [ADDON] Update Random Info (Line_Random)
                 local lastAct, lastTime = getLastAction()
-                local randomText = "Random: ???"
-                local randomColor = Color3.fromRGB(200, 200, 200)
+                local randomText
+                local randomColor
 
                 if lastAct == "BOUGHT" then
-                    local cooldown = 7200 -- 2 hours
+                    local cooldown = 7200
                     local timeSince = os.time() - lastTime
                     local remaining = cooldown - timeSince
                     if remaining > 0 then
                         local h = math.floor(remaining / 3600)
                         local m = math.floor((remaining % 3600) / 60)
                         local s = remaining % 60
-                        randomText = string.format("Next Random: %02d:%02d:%02d", h, m, s)
-                        randomColor = Color3.fromRGB(255, 100, 100) -- Red
+                        randomText = string.format("Time: %02d:%02d:%02d", h, m, s)
+                        randomColor = Color3.fromRGB(255, 100, 100)
                     else
-                        randomText = "Random: READY"
-                        randomColor = Color3.fromRGB(0, 255, 0) -- Green
+                        if diff <= 0 then
+                            randomText = "Time: Đủ thời gian"
+                            randomColor = Color3.fromRGB(0, 255, 0)
+                        else
+                            randomText = string.format("Time: chờ thêm %s Beli mới có thể random", formatNumber(diff))
+                            randomColor = Color3.fromRGB(255, 255, 0)
+                        end
                     end
                 else
-                    randomText = "Random: READY"
-                    randomColor = Color3.fromRGB(0, 255, 0) -- Green
+                    if diff <= 0 then
+                        randomText = "Time: Đủ thời gian"
+                        randomColor = Color3.fromRGB(0, 255, 0)
+                    else
+                        randomText = string.format("Time: chờ thêm %s Beli mới có thể random", formatNumber(diff))
+                        randomColor = Color3.fromRGB(255, 255, 0)
+                    end
                 end
 
                 local lRandom = g.MainFrame:FindFirstChild("Line_Random")
@@ -651,6 +661,7 @@ task.spawn(function()
         -- MODE: RANDOM FRUIT
         if curBeli >= cost then
             log(">>> [VIP1] Đủ tiền -> Chạy Random Fruit...")
+            saveLastAction("BOUGHT")
             updateStatus("Random")
             
             -- [UPDATED] Không tự gửi ChangeAccount nữa vì script Brain sẽ tự làm việc đó.
