@@ -15,7 +15,7 @@ local pg = LP.PlayerGui
 repeat task.wait() until #pg:GetChildren() > 0
 
 -- [FIX] Chờ thêm 5s để bảng chọn phe hiện rõ
-task.wait(2)
+task.wait(5)
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -490,15 +490,17 @@ task.spawn(function()
     end
 
     local function getServerType()
-        local st = "VIP1" -- Default fallback
+        local st = "VIP1"
+        local randomEnabled = false
         pcall(function()
             if isfile and isfile("appStorage.json") then
                 local c = readfile("appStorage.json")
                 local j = HttpService:JSONDecode(c)
                 if j.ServerType then st = j.ServerType end
+                if j.RandomEnabled ~= nil then randomEnabled = j.RandomEnabled end
             end
         end)
-        return st
+        return st, randomEnabled
     end
 
     local function getRandomPrice()
@@ -511,8 +513,34 @@ task.spawn(function()
         return cost
     end
 
+    local function detectBeliMultiplier()
+        local mult = 1
+        pcall(function()
+            local pg = LP:FindFirstChild("PlayerGui")
+            if not pg then return end
+            for _, d in ipairs(pg:GetDescendants()) do
+                if d:IsA("TextLabel") and d.Visible then
+                    local t = string.lower(d.Text or "")
+                    if (t:find("x3") or t:find("3x")) and (t:find("beli") or t:find("money")) then
+                        mult = 3
+                        break
+                    elseif (t:find("x2") or t:find("2x")) and (t:find("beli") or t:find("money")) and mult < 3 then
+                        mult = 2
+                    end
+                end
+            end
+        end)
+        return mult
+    end
+
+    local function getEffectiveServerType()
+        local st, randomEnabled = getServerType()
+        SERVER_TYPE = st
+        return st, randomEnabled
+    end
+
     -- 3. Logic Branching
-    local serverType = getServerType()
+    local serverType, randomEnabled = getEffectiveServerType()
     
     -- [DEBUG] In rõ nội dung file để kiểm tra
     task.spawn(function()
@@ -527,10 +555,11 @@ task.spawn(function()
 
     local curBeli = LP.Data.Beli.Value
     local cost = getRandomPrice()
+    local targetCost = cost
 
     log("---------------------------------------")
     log("SERVER TYPE: " .. serverType)
-    log("BELI: " .. curBeli .. " | COST: " .. cost)
+    log("BELI: " .. curBeli .. " | COST 1x: " .. cost .. " | TARGET FARM: " .. targetCost)
     log("---------------------------------------")
 
     local FARM_DONE = false
@@ -555,9 +584,21 @@ task.spawn(function()
             local diff = c - b
             local st = (diff <= 0) and "ĐỦ TIỀN" or ("Thiếu " .. formatNumber(diff))
             
-            -- Format màu sắc cho trạng thái
-            local serverColor = (serverType == "VIP1") and "VIP 1 (Random)" or "VIP 2 (Farm)"
-            local infoText = string.format("[%s] Beli: %s | Cần: %s | %s", serverColor, formatNumber(b), formatNumber(c), st)
+            local multiplier = detectBeliMultiplier()
+            local serverText
+            if serverType == "VIP1" then
+                if randomEnabled then
+                    serverText = "VIP 1 (Random)"
+                else
+                    serverText = "VIP 1 (Random OFF)"
+                end
+            else
+                serverText = "VIP 2 (Farm)"
+            end
+            if multiplier > 1 then
+                serverText = serverText .. string.format(" | x%d Beli", multiplier)
+            end
+            local infoText = string.format("[%s] Beli: %s | Cần: %s | %s", serverText, formatNumber(b), formatNumber(c), st)
             
             -- Update JeyrkyDashboard Line 2
             local g = LP.PlayerGui:FindFirstChild("JeyrkyDashboard")
@@ -584,26 +625,36 @@ task.spawn(function()
 
                 -- [ADDON] Update Random Info (Line_Random)
                 local lastAct, lastTime = getLastAction()
-                local randomText = "Random: ???"
-                local randomColor = Color3.fromRGB(200, 200, 200)
+                local randomText
+                local randomColor
 
                 if lastAct == "BOUGHT" then
-                    local cooldown = 7200 -- 2 hours
+                    local cooldown = 7200
                     local timeSince = os.time() - lastTime
                     local remaining = cooldown - timeSince
                     if remaining > 0 then
                         local h = math.floor(remaining / 3600)
                         local m = math.floor((remaining % 3600) / 60)
                         local s = remaining % 60
-                        randomText = string.format("Next Random: %02d:%02d:%02d", h, m, s)
-                        randomColor = Color3.fromRGB(255, 100, 100) -- Red
+                        randomText = string.format("Time: %02d:%02d:%02d", h, m, s)
+                        randomColor = Color3.fromRGB(255, 100, 100)
                     else
-                        randomText = "Random: READY"
-                        randomColor = Color3.fromRGB(0, 255, 0) -- Green
+                        if diff <= 0 then
+                            randomText = "Time: Đủ thời gian"
+                            randomColor = Color3.fromRGB(0, 255, 0)
+                        else
+                            randomText = string.format("Time: chờ thêm %s Beli mới có thể random", formatNumber(diff))
+                            randomColor = Color3.fromRGB(255, 255, 0)
+                        end
                     end
                 else
-                    randomText = "Random: READY"
-                    randomColor = Color3.fromRGB(0, 255, 0) -- Green
+                    if diff <= 0 then
+                        randomText = "Time: Đủ thời gian"
+                        randomColor = Color3.fromRGB(0, 255, 0)
+                    else
+                        randomText = string.format("Time: chờ thêm %s Beli mới có thể random", formatNumber(diff))
+                        randomColor = Color3.fromRGB(255, 255, 0)
+                    end
                 end
 
                 local lRandom = g.MainFrame:FindFirstChild("Line_Random")
@@ -618,48 +669,43 @@ task.spawn(function()
     end)
 
     if serverType == "VIP1" then
-        -- MODE: RANDOM FRUIT
+        if not randomEnabled then
+            log(">>> [VIP1] Random bị tắt (RandomEnabled=false) -> Không chạy script.")
+            updateStatus("RandomDisabled")
+            return
+        end
         if curBeli >= cost then
             log(">>> [VIP1] Đủ tiền -> Chạy Random Fruit...")
+            saveLastAction("BOUGHT")
             updateStatus("Random")
-            
-            -- [UPDATED] Không tự gửi ChangeAccount nữa vì script Brain sẽ tự làm việc đó.
-            -- Chỉ giữ lại logic lưu trạng thái "BOUGHT" nếu cần thiết (nhưng vì script Brain tự xử lý nên có thể bỏ qua hoặc để script Brain tự lo)
-            
-            -- Exec Script
             local success, err = pcall(function()
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/jeyrky/test/refs/heads/main/Brain"))()
             end)
             if not success then
                 log("Lỗi load script Brain: " .. tostring(err))
                 updateStatus("ERROR LOAD SCRIPT: " .. tostring(err), 5)
-                -- Fallback: Nếu không load được script thì buộc phải tự next acc
                 task.wait(5)
                 startSignalLoop("ChangeAccount") 
             end
         else
-            -- Check "Bought" History
             local lastAct, lastTime = getLastAction()
             if lastAct == "BOUGHT" and (os.time() - lastTime) < 300 then
                 log(">>> [VIP1] Phát hiện vừa mua trái (History < 5p) -> Gửi lại ChangeAccount")
                 startSignalLoop("ChangeAccount")
             else
                 log(">>> [VIP1] Thiếu tiền (Có: " .. curBeli .. " | Cần: " .. cost .. ") -> Gửi tín hiệu NotEnoughBeli")
-                
-                -- [DEBUG] Test writefile trực tiếp để xem có lỗi permission không
                 pcall(function()
                     writefile("debug_signal_test.txt", "Test write from NotEnoughBeli logic at " .. tostring(os.time()))
                     log(">>> [DEBUG] Write debug file OK")
                 end)
-    
-                startSignalLoop("NotEnoughBeli") -- Loop signal
+                startSignalLoop("NotEnoughBeli")
             end
         end
 
     elseif serverType == "VIP2" then
-        -- MODE: FARM BELI
-        if curBeli >= cost then
-            log(">>> [VIP2] Đã đủ tiền -> Gửi tín hiệu về VIP1 Random (LOOP 5s)")
+        -- MODE: FARM BELI (MỤC TIÊU: ĐỦ TIỀN CHO 1 LẦN RANDOM)
+        if curBeli >= targetCost then
+            log(">>> [VIP2] Đã đủ tiền Beli cho 1 lần random -> Gửi tín hiệu về VIP1 (LOOP 5s)")
             startSignalLoop("EnoughBeliFarmDone") -- Loop signal
         else
             log(">>> [VIP2] Thiếu tiền -> Farm Chest...")
@@ -668,9 +714,9 @@ task.spawn(function()
             task.spawn(function()
                 while true do
                     task.wait(5)
-                    if LP.Data.Beli.Value >= getRandomPrice() then
+                    if LP.Data.Beli.Value >= targetCost then
                         FARM_DONE = true
-                        log(">>> [VIP2] Farm xong! Signal về VIP1 (LOOP 5s)...")
+                        log(">>> [VIP2] Farm đủ Beli cho 1 lần random! Signal về VIP1 (LOOP 5s)...")
                         updateStatus("Đủ Beli - Reset Account")
                         startSignalLoop("EnoughBeliFarmDone") -- Loop signal
                         break
