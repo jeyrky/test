@@ -1,8 +1,18 @@
 local Players = game:GetService("Players")
+
+-- [FIX] Chờ PlayerGui load xong (Quan trọng cho việc click UI)
+repeat task.wait() until Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
+repeat task.wait() until LocalPlayer:FindFirstChild("PlayerGui")
+
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
-local LocalPlayer = Players.LocalPlayer
+-- local LocalPlayer = Players.LocalPlayer -- (Đã define ở trên)
+
+local TweenService = game:GetService("TweenService")
+
+print(">>> TP-PVP Script Loading... (Version 3.3 - Smooth Fly)") -- Debug print
 
 -- [[ CẤU HÌNH ]] --
 local CONFIG = {
@@ -149,17 +159,18 @@ end
 
 -- [[ CÁC HÀM LOGIC GAME ]] --
 
--- Hàm chọn phe (Cải tiến: Remote + Click UI)
+-- Hàm chọn phe (Cải tiến: Loop liên tục cho đến khi chọn được)
 local function AutoChooseTeam()
-    -- Cách 1: Dùng Remote (Nhanh nhất)
-    pcall(function()
-        local args = {[1] = "SetTeam", [2] = CONFIG.Team}
-        ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(args))
-    end)
-    
-    -- Cách 2: Click UI (Fallback nếu Remote lỗi)
-    task.spawn(function()
-        task.wait(1)
+    local t0 = os.clock()
+    -- Loop tối đa 30 giây hoặc cho đến khi vào Team
+    while LocalPlayer.Team == nil and (os.clock() - t0 < 30) do
+        -- Cách 1: Dùng Remote
+        pcall(function()
+            local args = {[1] = "SetTeam", [2] = CONFIG.Team}
+            ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(args))
+        end)
+        
+        -- Cách 2: Click UI
         if LocalPlayer.Team == nil then
             local function click(btn)
                 if not btn then return end
@@ -172,16 +183,14 @@ local function AutoChooseTeam()
                 end)
             end
             
-            -- Tìm nút Pirates trong CoreGui hoặc PlayerGui
             local list = {}
-            
-            -- [FIX] Safe CoreGui access
+            -- Scan CoreGui
             pcall(function()
                 if game:GetService("CoreGui") then
                     for _, v in pairs(game:GetService("CoreGui"):GetDescendants()) do table.insert(list, v) end
                 end
             end)
-
+            -- Scan PlayerGui
             if LocalPlayer:FindFirstChild("PlayerGui") then
                 pcall(function()
                     for _, v in pairs(LocalPlayer.PlayerGui:GetDescendants()) do table.insert(list, v) end
@@ -191,15 +200,17 @@ local function AutoChooseTeam()
             for _, v in pairs(list) do
                 if (v:IsA("TextButton") or v:IsA("ImageButton")) then
                     local text = (v:IsA("TextButton") and v.Text) or v.Name
+                    -- Tìm chữ Pirate hoặc Marine (nếu cần)
                     if text:lower():find("pirate") then
-                        print("Tìm thấy nút chọn phe: " .. v.Name)
+                        print(">>> Tìm thấy nút chọn phe: " .. v.Name .. " -> CLICK!")
                         click(v)
-                        break
                     end
                 end
             end
         end
-    end)
+        
+        task.wait(1) -- Thử lại mỗi 1 giây
+    end
 end
 
 -- Hàm bật PVP
@@ -212,30 +223,64 @@ local function EnablePVP()
     end)
 end
 
--- Hàm khóa vị trí (Anti-Knockback & Lock Position)
-local function LockPosition()
+-- Hàm bay (Tween) - Thay thế cho TP tức thời
+local function TweenFly(targetCFrame)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    
+    local root = char.HumanoidRootPart
+    local dist = (root.Position - targetCFrame.Position).Magnitude
+    
+    -- Nếu gần thì return để Lock lo
+    if dist <= 50 then return end
+
+    print(">>> Đang bay tới mục tiêu... Khoảng cách: " .. math.floor(dist))
+    
+    local speed = 300 -- Tốc độ bay (Studs/s) - Chuẩn an toàn
+    local duration = dist / speed
+    
+    local ti = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(root, ti, {CFrame = targetCFrame})
+    
+    -- BodyVelocity để giữ nhân vật không bị rơi/giật
+    local bv = Instance.new("BodyVelocity")
+    bv.Velocity = Vector3.zero
+    bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+    bv.Parent = root
+    
+    -- NoClip khi bay
+    local noclipConn
+    noclipConn = RunService.Stepped:Connect(function()
+        if char then
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") then v.CanCollide = false end
+            end
+            if root then root.Velocity = Vector3.zero end
+        end
+    end)
+    
+    tween:Play()
+    tween.Completed:Wait()
+    
+    if noclipConn then noclipConn:Disconnect() end
+    if bv then bv:Destroy() end
+end
+
+-- Hàm khóa vị trí (Chỉ chạy khi đã ở gần)
+local function LockPositionLoop()
     RunService.Stepped:Connect(function()
         if not isRunning then return end
         
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
             if char.Humanoid.Health > 0 then
-                -- 1. Reset vận tốc (Anti-Knockback)
-                char.HumanoidRootPart.Velocity = Vector3.zero
-                char.HumanoidRootPart.RotVelocity = Vector3.zero
-                
-                -- 2. Kiểm tra khoảng cách
                 local dist = (char.HumanoidRootPart.Position - CONFIG.TargetCFrame.Position).Magnitude
                 
-                if dist > 150 then
-                    -- [BYPASS] Nếu ở quá xa (>150m), dùng TP Bypass (Set CFrame liên tục)
+                -- Chỉ khóa cứng khi đã ở gần (< 50m)
+                if dist <= 50 then
                     char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
-                    
-                    -- Anti-Seat (Không cho ngồi ghế để tránh bug)
-                    char.Humanoid.Sit = false
-                else
-                    -- [LOCK] Nếu đã ở gần, khóa cứng vị trí
-                    char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
+                    char.HumanoidRootPart.Velocity = Vector3.zero
+                    char.HumanoidRootPart.RotVelocity = Vector3.zero
                 end
             end
         end
@@ -259,10 +304,10 @@ local function OnCharacterAdded(char)
     AutoChooseTeam()
     task.wait(0.5)
     
-    -- 2. Dịch chuyển ngay đến vị trí
-    if char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
-    end
+    -- 2. (ĐÃ BỎ) Không TP tức thời nữa
+    -- if char:FindFirstChild("HumanoidRootPart") then
+    --     char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
+    -- end
     
     -- 3. Bật PVP
     task.wait(1)
@@ -287,31 +332,42 @@ end
 -- Kết nối sự kiện
 LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 
+-- [FIX] Chạy chọn phe ngay lập tức (Không chờ CharacterAdded vì đang ở màn hình chọn phe)
+task.spawn(function()
+    if LocalPlayer.Team == nil then
+        print(">>> Đang ở màn hình chọn phe -> Auto Pick Team...")
+        AutoChooseTeam()
+    end
+end)
+
 -- Chạy lần đầu nếu nhân vật đã có sẵn
 if LocalPlayer.Character then
     OnCharacterAdded(LocalPlayer.Character)
 end
 
--- Bắt đầu vòng lặp khóa vị trí
-LockPosition()
+-- Bắt đầu vòng lặp khóa vị trí (Logic mới)
+LockPositionLoop()
 
--- Vòng lặp kiểm tra trạng thái định kỳ
+-- Vòng lặp kiểm tra trạng thái định kỳ và bay nếu cần
 spawn(function()
     while isRunning do
-        task.wait(5)
+        task.wait(1) -- Check mỗi giây
         
         if DeathCount >= MAX_DEATHS then
             break -- Thoát vòng lặp nếu đã chết đủ
         end
 
         -- Cứ 5 giây gửi lệnh bật PVP một lần cho chắc
-        EnablePVP()
+        if os.time() % 5 == 0 then
+             EnablePVP()
+        end
         
-        -- Nếu đang sống mà bị lệch vị trí thì kéo về
+        -- Nếu đang sống mà ở xa thì bay tới
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
-            if (char.HumanoidRootPart.Position - CONFIG.TargetCFrame.Position).Magnitude > 5 then
-                char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
+            local dist = (char.HumanoidRootPart.Position - CONFIG.TargetCFrame.Position).Magnitude
+            if dist > 50 then
+                TweenFly(CONFIG.TargetCFrame)
             end
         end
     end
