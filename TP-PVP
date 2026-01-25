@@ -23,6 +23,7 @@ local CONFIG = {
 local DeathCount = 0
 local isRunning = true
 local MAX_DEATHS = 3 -- Số lần chết tối đa trước khi đổi acc
+local hasResetStats = false -- Biến kiểm tra đã reset stats chưa
 
 -- [[ UI HIỂN THỊ SỐ LẦN CHẾT ]] --
 local function CreateDeathCounterUI()
@@ -159,18 +160,18 @@ end
 
 -- [[ CÁC HÀM LOGIC GAME ]] --
 
--- Hàm chọn phe (Cải tiến: Loop liên tục cho đến khi chọn được)
+-- Hàm chọn phe (Cải tiến: Loop liên tục & Scan kỹ hơn giống auto.txt)
 local function AutoChooseTeam()
     local t0 = os.clock()
-    -- Loop tối đa 30 giây hoặc cho đến khi vào Team
-    while LocalPlayer.Team == nil and (os.clock() - t0 < 30) do
+    -- Loop tối đa 60 giây (tăng thời gian chờ)
+    while LocalPlayer.Team == nil and (os.clock() - t0 < 60) do
         -- Cách 1: Dùng Remote
         pcall(function()
             local args = {[1] = "SetTeam", [2] = CONFIG.Team}
             ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(args))
         end)
         
-        -- Cách 2: Click UI
+        -- Cách 2: Click UI (Logic giống auto.txt)
         if LocalPlayer.Team == nil then
             local function click(btn)
                 if not btn then return end
@@ -183,29 +184,34 @@ local function AutoChooseTeam()
                 end)
             end
             
-            local list = {}
             -- Scan CoreGui
             pcall(function()
-                if game:GetService("CoreGui") then
-                    for _, v in pairs(game:GetService("CoreGui"):GetDescendants()) do table.insert(list, v) end
+                for _, v in ipairs(game:GetService("CoreGui"):GetDescendants()) do
+                    if (v:IsA("TextButton") or v:IsA("ImageButton")) then
+                        local name = v.Name:lower()
+                        local text = (v:IsA("TextButton") and v.Text:lower()) or ""
+                        if name:find("pirate") or text:find("pirate") then
+                            print(">>> [CoreGui] Click chọn phe: " .. v.Name)
+                            click(v)
+                        end
+                    end
                 end
             end)
+
             -- Scan PlayerGui
             if LocalPlayer:FindFirstChild("PlayerGui") then
                 pcall(function()
-                    for _, v in pairs(LocalPlayer.PlayerGui:GetDescendants()) do table.insert(list, v) end
-                end)
-            end
-            
-            for _, v in pairs(list) do
-                if (v:IsA("TextButton") or v:IsA("ImageButton")) then
-                    local text = (v:IsA("TextButton") and v.Text) or v.Name
-                    -- Tìm chữ Pirate hoặc Marine (nếu cần)
-                    if text:lower():find("pirate") then
-                        print(">>> Tìm thấy nút chọn phe: " .. v.Name .. " -> CLICK!")
-                        click(v)
+                    for _, v in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
+                        if (v:IsA("TextButton") or v:IsA("ImageButton")) then
+                            local name = v.Name:lower()
+                            local text = (v:IsA("TextButton") and v.Text:lower()) or ""
+                            if name:find("pirate") or text:find("pirate") then
+                                print(">>> [PlayerGui] Click chọn phe: " .. v.Name)
+                                click(v)
+                            end
+                        end
                     end
-                end
+                end)
             end
         end
         
@@ -303,6 +309,19 @@ local function OnCharacterAdded(char)
     -- 1. Chọn phe ngay lập tức
     AutoChooseTeam()
     task.wait(0.5)
+
+    -- [NEW] Reset Stats (Chạy 1 lần duy nhất)
+    if not hasResetStats then
+        print("--- BẮT ĐẦU RESET STATS BẰNG FRAGMENTS (2,500F) ---")
+        pcall(function()
+            local Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+            local result = Remote:InvokeServer("BlackbeardReward", "Refund", "2")
+            print("Kết quả Reset Stats: ", tostring(result))
+        end)
+        hasResetStats = true
+        print("Đã hoàn tất lệnh Reset Stats (Sẽ không chạy lại).")
+        print("Kiểm tra điểm xem đã về 0 chưa.")
+    end
     
     -- 2. (ĐÃ BỎ) Không TP tức thời nữa
     -- if char:FindFirstChild("HumanoidRootPart") then
