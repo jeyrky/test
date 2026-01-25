@@ -6,7 +6,7 @@ local LocalPlayer = Players.LocalPlayer
 
 -- [[ CẤU HÌNH ]] --
 local CONFIG = {
-    TargetCFrame = CFrame.new(-203.85, 149.47, -164.35), -- Tọa độ user yêu cầu
+    TargetCFrame = CFrame.new(-191.22, 149.75, -226.96), -- Tọa độ user yêu cầu
     Team = "Pirates", -- Tự động chọn Hải Tặc
 }
 
@@ -18,7 +18,17 @@ local MAX_DEATHS = 3 -- Số lần chết tối đa trước khi đổi acc
 local function CreateDeathCounterUI()
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "DeathCounterUI"
-    ScreenGui.Parent = game.CoreGui
+    
+    -- [FIX] Thử CoreGui, nếu lỗi thì dùng PlayerGui
+    local success, err = pcall(function()
+        ScreenGui.Parent = game:GetService("CoreGui")
+    end)
+    
+    if not success then
+        if LocalPlayer:FindFirstChild("PlayerGui") then
+            ScreenGui.Parent = LocalPlayer.PlayerGui
+        end
+    end
     
     local Frame = Instance.new("Frame")
     Frame.Size = UDim2.new(0, 200, 0, 50)
@@ -32,7 +42,13 @@ local function CreateDeathCounterUI()
     Label.BackgroundTransparency = 1
     Label.TextColor3 = Color3.fromRGB(255, 0, 0)
     Label.TextSize = 20
-    Label.Font = Enum.Font.SourceSansBold -- [FIX] Bold is not valid in some executors
+    
+    -- [FIX] Dùng Font cơ bản nhất để tránh lỗi
+    pcall(function()
+        Label.Font = Enum.Font.SourceSansBold 
+    end)
+    if Label.Font == nil then Label.Font = Enum.Font.SourceSans end
+
     Label.Text = "Số lần chết: 0 / " .. MAX_DEATHS
     Label.Parent = Frame
     
@@ -158,11 +174,18 @@ local function AutoChooseTeam()
             
             -- Tìm nút Pirates trong CoreGui hoặc PlayerGui
             local list = {}
-            if game:GetService("CoreGui") then
-                for _, v in pairs(game:GetService("CoreGui"):GetDescendants()) do table.insert(list, v) end
-            end
+            
+            -- [FIX] Safe CoreGui access
+            pcall(function()
+                if game:GetService("CoreGui") then
+                    for _, v in pairs(game:GetService("CoreGui"):GetDescendants()) do table.insert(list, v) end
+                end
+            end)
+
             if LocalPlayer:FindFirstChild("PlayerGui") then
-                for _, v in pairs(LocalPlayer.PlayerGui:GetDescendants()) do table.insert(list, v) end
+                pcall(function()
+                    for _, v in pairs(LocalPlayer.PlayerGui:GetDescendants()) do table.insert(list, v) end
+                end)
             end
             
             for _, v in pairs(list) do
