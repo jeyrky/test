@@ -1,0 +1,264 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+-- [[ CẤU HÌNH ]] --
+local CONFIG = {
+    TargetCFrame = CFrame.new(-203.85, 149.47, -164.35), -- Tọa độ user yêu cầu
+    Team = "Pirates", -- Tự động chọn Hải Tặc
+}
+
+local DeathCount = 0
+local isRunning = true
+local MAX_DEATHS = 3 -- Số lần chết tối đa trước khi đổi acc
+
+-- [[ UI HIỂN THỊ SỐ LẦN CHẾT ]] --
+local function CreateDeathCounterUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "DeathCounterUI"
+    ScreenGui.Parent = game.CoreGui
+    
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0, 200, 0, 50)
+    Frame.Position = UDim2.new(0.5, -100, 0.1, 0)
+    Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    Frame.BackgroundTransparency = 0.5
+    Frame.Parent = ScreenGui
+    
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, 0, 1, 0)
+    Label.BackgroundTransparency = 1
+    Label.TextColor3 = Color3.fromRGB(255, 0, 0)
+    Label.TextSize = 20
+    Label.Font = Enum.Font.Bold
+    Label.Text = "Số lần chết: 0 / " .. MAX_DEATHS
+    Label.Parent = Frame
+    
+    return Label
+end
+
+local DeathLabel = CreateDeathCounterUI()
+
+-- [[ HÀM HỖ TRỢ GỬI TÍN HIỆU ]] --
+local function SendChangeAccountSignal()
+    print(">>> [CHANGE ACCOUNT] Đã chết quá 3 lần! Gửi tín hiệu đổi tài khoản...")
+    
+    -- Cách 1: Gọi hàm Global từ auto.txt (Nếu có)
+    if getgenv and getgenv().SignalChangeAccount then
+        print(">>> Gọi Global SignalChangeAccount...")
+        getgenv().SignalChangeAccount()
+        return
+    end
+
+    -- Cách 2: Tự gửi tín hiệu nếu không chạy cùng auto.txt
+    local pkgName = "Unknown"
+    
+    -- Thử lấy tên Package từ appStorage.json (để Python biết chính xác emulator nào)
+    pcall(function()
+        if isfile and isfile("appStorage.json") then
+             local c = readfile("appStorage.json")
+             local data = HttpService:JSONDecode(c)
+             if data and data.PkgName then
+                 pkgName = data.PkgName
+             end
+        end
+    end)
+    print(">>> Using Package Name: " .. pkgName)
+    
+    local signalName = "ChangeAccount"
+    
+    local function send()
+        local body = HttpService:JSONEncode({
+            package = pkgName,
+            signal = signalName,
+            nonce = tostring(math.random(100000, 999999)),
+            Account = LocalPlayer.Name -- Gửi kèm tên acc
+        })
+        
+        local reqFunc = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
+        
+        -- 1. Gửi HTTP POST
+        if reqFunc then
+            task.spawn(function()
+                pcall(function()
+                    reqFunc({
+                        Url = "http://127.0.0.1:8000/signal",
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = body
+                    })
+                end)
+            end)
+            -- Backup cho Emulator
+            task.spawn(function()
+                pcall(function()
+                    reqFunc({
+                        Url = "http://10.0.2.2:8000/signal",
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = body
+                    })
+                end)
+            end)
+        end
+        
+        -- 2. Ghi file appStorage.json (Backup)
+        local js = {}
+        pcall(function()
+            if isfile and isfile("appStorage.json") then
+                 local c = readfile("appStorage.json")
+                 js = HttpService:JSONDecode(c)
+            end
+        end)
+        js.Signal = signalName
+        js.Nonce = tostring(math.random(100000, 999999))
+        js.Heartbeat = os.time()
+        
+        local content = HttpService:JSONEncode(js)
+        pcall(function() writefile("appStorage.json", content) end)
+    end
+
+    -- Loop gửi tín hiệu mỗi 5s
+    task.spawn(function()
+        while true do
+            print(">>> [LOOP] Đang gửi yêu cầu ChangeAccount...")
+            send()
+            task.wait(5)
+        end
+    end)
+end
+
+
+-- [[ CÁC HÀM LOGIC GAME ]] --
+
+-- Hàm chọn phe
+local function AutoChooseTeam()
+    local args = {
+        [1] = "SetTeam",
+        [2] = CONFIG.Team
+    }
+    pcall(function()
+        ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(args))
+    end)
+end
+
+-- Hàm bật PVP
+local function EnablePVP()
+    pcall(function()
+        ReplicatedStorage.Remotes.CommF_:InvokeServer("EnablePvp")
+    end)
+    pcall(function()
+        ReplicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer("/pvp", "All")
+    end)
+end
+
+-- Hàm khóa vị trí (Anti-Knockback & Lock Position)
+local function LockPosition()
+    RunService.Stepped:Connect(function()
+        if not isRunning then return end
+        
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
+            if char.Humanoid.Health > 0 then
+                -- 1. Reset vận tốc (Anti-Knockback)
+                char.HumanoidRootPart.Velocity = Vector3.zero
+                char.HumanoidRootPart.RotVelocity = Vector3.zero
+                
+                -- 2. Kiểm tra khoảng cách
+                local dist = (char.HumanoidRootPart.Position - CONFIG.TargetCFrame.Position).Magnitude
+                
+                if dist > 150 then
+                    -- [BYPASS] Nếu ở quá xa (>150m), dùng TP Bypass (Set CFrame liên tục)
+                    char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
+                    
+                    -- Anti-Seat (Không cho ngồi ghế để tránh bug)
+                    char.Humanoid.Sit = false
+                else
+                    -- [LOCK] Nếu đã ở gần, khóa cứng vị trí
+                    char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
+                end
+            end
+        end
+    end)
+end
+
+-- [[ LOGIC CHÍNH ]] --
+
+local function OnCharacterAdded(char)
+    -- Kiểm tra số lần chết TRƯỚC khi làm gì cả
+    if DeathCount >= MAX_DEATHS then
+        print("Đã đạt giới hạn chết (" .. MAX_DEATHS .. "). Đang chờ đổi acc...")
+        SendChangeAccountSignal()
+        return -- Dừng mọi hoạt động khác
+    end
+
+    print("Nhân vật vừa hồi sinh/vào game...")
+    task.wait(1) -- Chờ load game
+    
+    -- 1. Chọn phe ngay lập tức
+    AutoChooseTeam()
+    task.wait(0.5)
+    
+    -- 2. Dịch chuyển ngay đến vị trí
+    if char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
+    end
+    
+    -- 3. Bật PVP
+    task.wait(1)
+    EnablePVP()
+    print("Đã yêu cầu bật PVP")
+    
+    -- 4. Lắng nghe sự kiện chết
+    local hum = char:WaitForChild("Humanoid")
+    hum.Died:Connect(function()
+        DeathCount = DeathCount + 1
+        DeathLabel.Text = "Số lần chết: " .. DeathCount .. " / " .. MAX_DEATHS
+        print("Đã chết! Tổng số lần chết: " .. DeathCount)
+        
+        if DeathCount >= MAX_DEATHS then
+            print(">>> ĐÃ CHẾT ĐỦ 3 LẦN! KÍCH HOẠT ĐỔI ACC...")
+            SendChangeAccountSignal()
+            isRunning = false -- Dừng khóa vị trí
+        end
+    end)
+end
+
+-- Kết nối sự kiện
+LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+
+-- Chạy lần đầu nếu nhân vật đã có sẵn
+if LocalPlayer.Character then
+    OnCharacterAdded(LocalPlayer.Character)
+end
+
+-- Bắt đầu vòng lặp khóa vị trí
+LockPosition()
+
+-- Vòng lặp kiểm tra trạng thái định kỳ
+spawn(function()
+    while isRunning do
+        task.wait(5)
+        
+        if DeathCount >= MAX_DEATHS then
+            break -- Thoát vòng lặp nếu đã chết đủ
+        end
+
+        -- Cứ 5 giây gửi lệnh bật PVP một lần cho chắc
+        EnablePVP()
+        
+        -- Nếu đang sống mà bị lệch vị trí thì kéo về
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+            if (char.HumanoidRootPart.Position - CONFIG.TargetCFrame.Position).Magnitude > 5 then
+                char.HumanoidRootPart.CFrame = CONFIG.TargetCFrame
+            end
+        end
+    end
+end)
+
+print("Script TP-PVP đã kích hoạt!")
+print("Tọa độ khóa: " .. tostring(CONFIG.TargetCFrame))
+print("Giới hạn chết: " .. MAX_DEATHS .. " lần -> Đổi Account")
