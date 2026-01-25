@@ -311,17 +311,19 @@ local function OnCharacterAdded(char)
     task.wait(0.5)
 
     -- [NEW] Reset Stats (Chạy 1 lần duy nhất)
+    -- [[ TẠM TẮT THEO YÊU CẦU USER
     if not hasResetStats then
-        print("--- BẮT ĐẦU RESET STATS BẰNG FRAGMENTS (2,500F) ---")
-        pcall(function()
-            local Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
-            local result = Remote:InvokeServer("BlackbeardReward", "Refund", "2")
-            print("Kết quả Reset Stats: ", tostring(result))
-        end)
-        hasResetStats = true
-        print("Đã hoàn tất lệnh Reset Stats (Sẽ không chạy lại).")
-        print("Kiểm tra điểm xem đã về 0 chưa.")
+        -- print("--- BẮT ĐẦU RESET STATS BẰNG FRAGMENTS (2,500F) ---")
+        -- pcall(function()
+        --     local Remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+        --     local result = Remote:InvokeServer("BlackbeardReward", "Refund", "2")
+        --     print("Kết quả Reset Stats: ", tostring(result))
+        -- end)
+        -- hasResetStats = true
+        -- print("Đã hoàn tất lệnh Reset Stats (Sẽ không chạy lại).")
+        -- print("Kiểm tra điểm xem đã về 0 chưa.")
     end
+    -- ]]
     
     -- 2. (ĐÃ BỎ) Không TP tức thời nữa
     -- if char:FindFirstChild("HumanoidRootPart") then
