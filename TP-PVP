@@ -32,7 +32,7 @@ local function CreateDeathCounterUI()
     Label.BackgroundTransparency = 1
     Label.TextColor3 = Color3.fromRGB(255, 0, 0)
     Label.TextSize = 20
-    Label.Font = Enum.Font.Bold
+    Label.Font = Enum.Font.SourceSansBold -- [FIX] Bold is not valid in some executors
     Label.Text = "Số lần chết: 0 / " .. MAX_DEATHS
     Label.Parent = Frame
     
@@ -133,14 +133,49 @@ end
 
 -- [[ CÁC HÀM LOGIC GAME ]] --
 
--- Hàm chọn phe
+-- Hàm chọn phe (Cải tiến: Remote + Click UI)
 local function AutoChooseTeam()
-    local args = {
-        [1] = "SetTeam",
-        [2] = CONFIG.Team
-    }
+    -- Cách 1: Dùng Remote (Nhanh nhất)
     pcall(function()
+        local args = {[1] = "SetTeam", [2] = CONFIG.Team}
         ReplicatedStorage.Remotes.CommF_:InvokeServer(unpack(args))
+    end)
+    
+    -- Cách 2: Click UI (Fallback nếu Remote lỗi)
+    task.spawn(function()
+        task.wait(1)
+        if LocalPlayer.Team == nil then
+            local function click(btn)
+                if not btn then return end
+                local vim = game:GetService("VirtualInputManager")
+                local pos = btn.AbsolutePosition + (btn.AbsoluteSize/2)
+                pcall(function()
+                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, btn, 0)
+                    task.wait(0.05)
+                    vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, btn, 0)
+                end)
+            end
+            
+            -- Tìm nút Pirates trong CoreGui hoặc PlayerGui
+            local list = {}
+            if game:GetService("CoreGui") then
+                for _, v in pairs(game:GetService("CoreGui"):GetDescendants()) do table.insert(list, v) end
+            end
+            if LocalPlayer:FindFirstChild("PlayerGui") then
+                for _, v in pairs(LocalPlayer.PlayerGui:GetDescendants()) do table.insert(list, v) end
+            end
+            
+            for _, v in pairs(list) do
+                if (v:IsA("TextButton") or v:IsA("ImageButton")) then
+                    local text = (v:IsA("TextButton") and v.Text) or v.Name
+                    if text:lower():find("pirate") then
+                        print("Tìm thấy nút chọn phe: " .. v.Name)
+                        click(v)
+                        break
+                    end
+                end
+            end
+        end
     end)
 end
 
